@@ -1,0 +1,3 @@
+[submodule "external/geni"]
+	path = external/geni
+	url = git@github.com:pocikode/GeniEngine.git
