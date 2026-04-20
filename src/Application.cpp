@@ -2,7 +2,6 @@
 #include "Application.h"
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <iostream>
 
 bool Application::Init()
 {
@@ -35,15 +34,14 @@ void Application::SetupScene()
     light->SetColor(glm::vec3(1.0f, 0.95f, 0.9f));
     m_lightObj->AddComponent(light);
 
+    // Load unlit material (used for box, grid, and axes)
+    m_unlitMat = Geni::Material::Load("materials/unlit.mat");
+
     // Target box (the object being tracked)
     auto boxMesh = Geni::Mesh::CreateBox(glm::vec3(0.3f));
-    auto defaultMat = Geni::Material::Load("materials/default.mat");
     m_targetObj = m_scene->CreateObject("Target");
-    m_targetObj->SetPosition(glm::vec3(0, 0, 0));
-    m_targetObj->AddComponent(new Geni::MeshComponent(defaultMat, boxMesh));
-
-    // Load unlit material for grid and axes
-    m_unlitMat = Geni::Material::Load("materials/unlit.mat");
+    m_targetObj->SetPosition(glm::vec3(0, 0.3f, 0));
+    m_targetObj->AddComponent(new Geni::MeshComponent(m_unlitMat, boxMesh));
 
     // XZ Grid: 20×20, 1-unit spacing, ±10 units
     std::vector<glm::vec3> gridPos, gridCol;
@@ -70,14 +68,14 @@ void Application::SetupScene()
 
     // RGB Coordinate Axes (length 1.5)
     std::vector<glm::vec3> axesPos = {
-        {0, 0, 0}, {1.5f, 0, 0},  // X-axis
-        {0, 0, 0}, {0, 1.5f, 0},  // Y-axis
-        {0, 0, 0}, {0, 0, 1.5f}   // Z-axis
+        {0, 0, 0}, {1.5f, 0, 0}, // X-axis
+        {0, 0, 0}, {0, 1.5f, 0}, // Y-axis
+        {0, 0, 0}, {0, 0, 1.5f}  // Z-axis
     };
     std::vector<glm::vec3> axesCol = {
-        {1, 0, 0}, {1, 0, 0},  // Red X
-        {0, 1, 0}, {0, 1, 0},  // Green Y
-        {0, 0, 1}, {0, 0, 1}   // Blue Z
+        {1, 0, 0}, {1, 0, 0}, // Red X
+        {0, 1, 0}, {0, 1, 0}, // Green Y
+        {0, 0, 1}, {0, 0, 1}  // Blue Z
     };
 
     m_axesMesh = Geni::Mesh::CreateLines(axesPos, axesCol);
@@ -115,8 +113,8 @@ void Application::Update(float deltaTime)
 
     if (m_lastMarkerResult.detected)
     {
-        glm::vec3 pos3d = Unproject2DtoWorld(m_lastMarkerResult, m_markerDetector.GetFrameWidth(),
-                                             m_markerDetector.GetFrameHeight());
+        glm::vec3 pos3d =
+            Unproject2DtoWorld(m_lastMarkerResult, m_markerDetector.GetFrameWidth(), m_markerDetector.GetFrameHeight());
         m_targetObj->SetPosition(pos3d);
 
         // Record if active
@@ -131,14 +129,16 @@ void Application::Update(float deltaTime)
     m_uiState.keyframeCount = m_recorder.GetKeyframeCount();
     m_uiState.recordingDuration = m_recorder.GetDuration();
 
-    // Upload camera feed texture if panel is visible
-    if (m_uiState.showCameraFeed && m_markerDetector.IsOpen())
+    // Always upload camera feed (panel is always visible now)
+    if (m_markerDetector.IsOpen())
     {
         m_uiManager.UploadCameraFeed(m_markerDetector.GetLastFrame(), m_uiState);
     }
 
     // Build ImGui command lists
-    m_uiManager.BuildUI(m_uiState, m_lastMarkerResult, m_markerDetectedThisFrame);
+    auto *cam = m_cameraObj->GetComponent<Geni::CameraComponent>();
+    glm::mat4 view = cam->GetViewMatrix();
+    m_uiManager.BuildUI(m_uiState, m_lastMarkerResult, m_markerDetectedThisFrame, view);
 
     // Handle button requests from UI
     if (m_uiState.startRecordRequested)
@@ -171,8 +171,9 @@ void Application::Update(float deltaTime)
     {
         std::string ext = (m_uiState.exportFmtIndex == 0) ? ".mp4" : ".avi";
         std::string path = std::string(m_uiState.exportPath) + ext;
-        m_exporter.Export(m_recorder.GetKeyframes(), m_targetObj, m_uiState.exportFps, path,
-                          m_uiState.exportFmtIndex == 0);
+        m_exporter.Export(
+            m_recorder.GetKeyframes(), m_targetObj, m_uiState.exportFps, path, m_uiState.exportFmtIndex == 0
+        );
         m_uiState.exportVideoRequested = false;
     }
 

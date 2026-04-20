@@ -3,7 +3,21 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
+#include <glm/mat3x3.hpp>
 #include <opencv2/imgproc.hpp>
+
+namespace
+{
+constexpr ImGuiWindowFlags kSidebarFlags = ImGuiWindowFlags_NoMove |
+                                           ImGuiWindowFlags_NoResize |
+                                           ImGuiWindowFlags_NoCollapse;
+
+constexpr float kSidebarW = 300.0f;
+constexpr float kMenuBarH = 20.0f;
+constexpr float kMarkerH = 280.0f;
+constexpr float kRecordH = 200.0f;
+constexpr float kExportH = 240.0f;
+} // namespace
 
 bool UIManager::Init(GLFWwindow *window)
 {
@@ -27,7 +41,8 @@ void UIManager::Destroy()
     ImGui::DestroyContext();
 }
 
-void UIManager::BuildUI(UIState &state, const MarkerResult &detectionResult, bool detectedThisFrame)
+void UIManager::BuildUI(UIState &state, const MarkerResult &detectionResult,
+                        bool detectedThisFrame, const glm::mat4 &viewMatrix)
 {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -41,10 +56,8 @@ void UIManager::BuildUI(UIState &state, const MarkerResult &detectionResult, boo
     ImGuiIO &io = ImGui::GetIO();
     DrawStatusBar(state, io.Framerate, detectedThisFrame);
 
-    if (state.showCameraFeed)
-    {
-        DrawCameraFeedWindow(state);
-    }
+    DrawCameraFeedWindow(state);
+    DrawAxisGizmo(viewMatrix);
 
     ImGui::Render();
 }
@@ -99,20 +112,15 @@ void UIManager::DrawMenuBar(UIState &state)
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("View"))
-        {
-            ImGui::MenuItem("Camera Feed", nullptr, &state.showCameraFeed);
-            ImGui::EndMenu();
-        }
         ImGui::EndMainMenuBar();
     }
 }
 
 void UIManager::DrawMarkerConfigPanel(UIState &state, const MarkerResult &result)
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 280), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Marker Configuration");
+    ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kMarkerH), ImGuiCond_Always);
+    ImGui::Begin("Marker Configuration", nullptr, kSidebarFlags);
 
     ImGui::Text("HSV Range");
     state.hsvDirty |= ImGui::SliderInt("Hue Min##h_min", &state.hsvRange.hMin, 0, 179);
@@ -128,7 +136,7 @@ void UIManager::DrawMarkerConfigPanel(UIState &state, const MarkerResult &result
     if (result.detected)
     {
         ImGui::Text("Centroid: (%.3f, %.3f)", result.centroidNorm.x, result.centroidNorm.y);
-        ImGui::Text("Area: %.0f px²", result.areaPixels);
+        ImGui::Text("Area: %.0f px", result.areaPixels);
     }
 
     ImGui::End();
@@ -136,9 +144,9 @@ void UIManager::DrawMarkerConfigPanel(UIState &state, const MarkerResult &result
 
 void UIManager::DrawRecordingPanel(UIState &state)
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 350), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Recording Control");
+    ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH + kMarkerH), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kRecordH), ImGuiCond_Always);
+    ImGui::Begin("Recording Control", nullptr, kSidebarFlags);
 
     ImGui::Text("Status: %s", state.isRecording ? "RECORDING" : "Idle");
     ImGui::ProgressBar(state.recordingDuration / 30.0f, ImVec2(-1, 0));
@@ -165,9 +173,9 @@ void UIManager::DrawRecordingPanel(UIState &state)
 
 void UIManager::DrawExportPanel(UIState &state)
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 570), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 220), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Export Settings");
+    ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH + kMarkerH + kRecordH), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kExportH), ImGuiCond_Always);
+    ImGui::Begin("Export Settings", nullptr, kSidebarFlags);
 
     ImGui::Text("Output Format");
     const char *fmts[] = {"MP4", "AVI"};
@@ -203,20 +211,57 @@ void UIManager::DrawStatusBar(UIState &state, float fps, bool detectedThisFrame)
 
 void UIManager::DrawCameraFeedWindow(UIState &state)
 {
-    ImGui::SetNextWindowPos(ImVec2(320, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 280), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Camera Feed");
+    const float W = 340.0f;
+    const float H = 260.0f;
+    const float margin = 10.0f;
+    const float statusBarH = 24.0f;
+
+    ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(
+        ImVec2(display.x - W - margin, display.y - H - statusBarH - margin),
+        ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(W, H), ImGuiCond_Always);
+    ImGui::Begin("Camera Feed", nullptr, kSidebarFlags);
 
     if (state.cameraFeedTexture != 0)
     {
         ImGui::Image((ImTextureID)(uintptr_t)state.cameraFeedTexture,
-                     ImVec2(state.feedWidth * 0.5f, state.feedHeight * 0.5f));
-        ImGui::Text("Live Feed");
+                     ImVec2(W - 20, H - 50));
     }
     else
     {
-        ImGui::Text("Camera not available");
+        ImGui::TextWrapped("Camera not available");
     }
 
     ImGui::End();
+}
+
+void UIManager::DrawAxisGizmo(const glm::mat4 &view)
+{
+    const float radius = 40.0f;
+    const float margin = 20.0f;
+    ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImVec2 center(display.x - radius - margin, kMenuBarH + radius + margin);
+
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    glm::mat3 rot(view);
+
+    glm::vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    ImU32 colors[3] = {
+        IM_COL32(235, 60, 60, 255),
+        IM_COL32(60, 220, 60, 255),
+        IM_COL32(80, 140, 255, 255),
+    };
+    const char *labels[3] = {"X", "Y", "Z"};
+
+    dl->AddCircleFilled(center, radius + 6.0f, IM_COL32(20, 20, 20, 160));
+
+    for (int i = 0; i < 3; ++i)
+    {
+        glm::vec3 v = rot * axes[i];
+        ImVec2 tip(center.x + v.x * radius, center.y - v.y * radius);
+        dl->AddLine(center, tip, colors[i], 2.5f);
+        dl->AddCircleFilled(tip, 3.0f, colors[i]);
+        dl->AddText(ImVec2(tip.x + 4, tip.y - 7), colors[i], labels[i]);
+    }
 }

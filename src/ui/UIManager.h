@@ -3,6 +3,7 @@
 #include "modules/MotionRecorder.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/mat4x4.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <string>
@@ -41,7 +42,8 @@ class UIManager
     bool Init(GLFWwindow *window);
     void Destroy();
 
-    void BuildUI(UIState &state, const MarkerResult &detectionResult, bool detectedThisFrame);
+    void BuildUI(UIState &state, const MarkerResult &detectionResult, bool detectedThisFrame,
+                 const glm::mat4 &viewMatrix);
     void Render();
     void UploadCameraFeed(const cv::Mat &frame, UIState &state);
 
@@ -52,6 +54,7 @@ class UIManager
     void DrawExportPanel(UIState &state);
     void DrawStatusBar(UIState &state, float fps, bool detectedThisFrame);
     void DrawCameraFeedWindow(UIState &state);
+    void DrawAxisGizmo(const glm::mat4 &viewMatrix);
 };
 
 struct GLFWwindow;
