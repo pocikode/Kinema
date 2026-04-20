@@ -1,3 +1,6 @@
 **/.DS_Store
 /.cache
 /build
+imgui.ini
+output.json
+profiling.json

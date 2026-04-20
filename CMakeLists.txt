@@ -1,39 +1,74 @@
-cmake_minimum_required(VERSION 3.10)
-
+cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(kinema)
 
-set(SRC_FILES
-    src/main.cpp
-    src/Application.cpp
-)
-include_directories(include)
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+set(KINEMA_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
 # Geni Engine
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/external/geni)
-include_directories(external/geni/include)
 
-# Find GLFW and GLEW for the main executable
+# OpenCV
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
+
+# ImGui via FetchContent
+include(FetchContent)
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.0
+)
+FetchContent_MakeAvailable(imgui)
+
+set(IMGUI_SOURCES
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLFW REQUIRED glfw3)
 pkg_check_modules(GLEW REQUIRED glew)
 
-include_directories(external/geni/thirdparty/stb)
+include_directories(${GLEW_INCLUDE_DIRS} ${GLFW_INCLUDE_DIRS})
 
-# link engine library and dependencies
-target_link_libraries(
-    ${PROJECT_NAME}
+set(SRC_FILES
+    src/main.cpp
+    src/Application.cpp
+    src/modules/MarkerDetector.cpp
+    src/modules/MotionRecorder.cpp
+    src/modules/VideoExporter.cpp
+    src/ui/UIManager.cpp
+    ${IMGUI_SOURCES}
+)
+
+add_executable(${PROJECT_NAME} ${SRC_FILES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    src/
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+    ${GLFW_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+    external/geni/thirdparty/stb
+    external/geni/include
+)
+
+target_link_libraries(${PROJECT_NAME}
     GeniEngine
     ${GLFW_LIBRARIES}
     ${GLEW_LIBRARIES}
+    ${OpenCV_LIBS}
 )
-target_include_directories(
-    ${PROJECT_NAME}
-    PRIVATE
-    ${GLFW_INCLUDE_DIRS}
-    ${GLEW_INCLUDE_DIRS}
+
+# Copy kinema assets next to executable
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${KINEMA_ASSETS_DIR}
+    ${CMAKE_BINARY_DIR}/assets
 )

@@ -1,0 +1,6 @@
+{
+  "shader": {
+    "vertex": "shaders/unlit.vert",
+    "fragment": "shaders/unlit.frag"
+  }
+}
