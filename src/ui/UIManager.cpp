@@ -5,6 +5,9 @@
 #include <GLFW/glfw3.h>
 #include <glm/mat3x3.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect/aruco_dictionary.hpp>
+
+#include <cstring>
 
 namespace
 {
@@ -12,12 +15,53 @@ constexpr ImGuiWindowFlags kSidebarFlags = ImGuiWindowFlags_NoMove |
                                            ImGuiWindowFlags_NoResize |
                                            ImGuiWindowFlags_NoCollapse;
 
-constexpr float kSidebarW = 300.0f;
+constexpr float kSidebarW = 320.0f;
 constexpr float kMenuBarH = 20.0f;
-constexpr float kMarkerH = 280.0f;
-constexpr float kRecordH = 200.0f;
-constexpr float kExportH = 240.0f;
+constexpr float kStatusBarH = 24.0f;
+
+const char *const kArucoDicts[] = {"DICT_4X4_50", "DICT_4X4_100", "DICT_5X5_50", "DICT_5X5_100", "DICT_6X6_250"};
+const int kArucoDictIds[] = {cv::aruco::DICT_4X4_50, cv::aruco::DICT_4X4_100, cv::aruco::DICT_5X5_50,
+                             cv::aruco::DICT_5X5_100, cv::aruco::DICT_6X6_250};
+constexpr int kArucoDictCount = static_cast<int>(sizeof(kArucoDicts) / sizeof(kArucoDicts[0]));
+
+const char *const kBindingLabels[] = {"Position", "Position + Rotation", "IK Target (2-bone)"};
+
+// Helper: combo over available bone names writing into a char[N] field.
+// Empty dropdown if the model hasn't been loaded yet.
+bool BoneCombo(const char *label, char *buffer, size_t bufferSize, const std::vector<std::string> &bones)
+{
+    bool changed = false;
+    if (ImGui::BeginCombo(label, buffer[0] ? buffer : "(none)"))
+    {
+        if (ImGui::Selectable("(none)", buffer[0] == 0))
+        {
+            buffer[0] = 0;
+            changed = true;
+        }
+        for (const auto &bone : bones)
+        {
+            bool selected = std::strcmp(buffer, bone.c_str()) == 0;
+            if (ImGui::Selectable(bone.c_str(), selected))
+            {
+                std::strncpy(buffer, bone.c_str(), bufferSize - 1);
+                buffer[bufferSize - 1] = 0;
+                changed = true;
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
 } // namespace
+
+int UIManager_GetArucoDictId(int index)
+{
+    if (index < 0 || index >= kArucoDictCount)
+        return kArucoDictIds[0];
+    return kArucoDictIds[index];
+}
 
 bool UIManager::Init(GLFWwindow *window)
 {
@@ -41,22 +85,19 @@ void UIManager::Destroy()
     ImGui::DestroyContext();
 }
 
-void UIManager::BuildUI(UIState &state, const MarkerResult &detectionResult,
-                        bool detectedThisFrame, const glm::mat4 &viewMatrix)
+void UIManager::BuildUI(UIState &state, const std::vector<MarkerObservation> &observations, const glm::mat4 &viewMatrix)
 {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
     DrawMenuBar(state);
-    DrawMarkerConfigPanel(state, detectionResult);
-    DrawRecordingPanel(state);
-    DrawExportPanel(state);
+    DrawSidebar(state, observations);
 
     ImGuiIO &io = ImGui::GetIO();
-    DrawStatusBar(state, io.Framerate, detectedThisFrame);
+    DrawStatusBar(state, io.Framerate, !observations.empty());
 
-    DrawCameraFeedWindow(state);
+    DrawCameraFeedWindow(state, observations);
     DrawAxisGizmo(viewMatrix);
 
     ImGui::Render();
@@ -87,8 +128,7 @@ void UIManager::UploadCameraFeed(const cv::Mat &frame, UIState &state)
         glBindTexture(GL_TEXTURE_2D, state.cameraFeedTexture);
     }
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, rgb.cols, rgb.rows, 0, GL_RGB, GL_UNSIGNED_BYTE,
-                 rgb.data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, rgb.cols, rgb.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb.data);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     state.feedWidth = rgb.cols;
@@ -105,49 +145,180 @@ void UIManager::DrawMenuBar(UIState &state)
                 state.saveJsonRequested = true;
             if (ImGui::MenuItem("Export Video"))
                 state.exportVideoRequested = true;
-            ImGui::Separator();
-            if (ImGui::MenuItem("Exit"))
-            {
-                // Will be handled by application
-            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
     }
 }
 
-void UIManager::DrawMarkerConfigPanel(UIState &state, const MarkerResult &result)
+void UIManager::DrawSidebar(UIState &state, const std::vector<MarkerObservation> &observations)
 {
+    ImVec2 display = ImGui::GetIO().DisplaySize;
+    float sidebarH = display.y - kMenuBarH - kStatusBarH;
+    if (sidebarH < 1.0f)
+        sidebarH = 1.0f;
+
     ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kMarkerH), ImGuiCond_Always);
-    ImGui::Begin("Marker Configuration", nullptr, kSidebarFlags);
+    ImGui::SetNextWindowSize(ImVec2(kSidebarW, sidebarH), ImGuiCond_Always);
+    ImGui::Begin("Sidebar", nullptr, kSidebarFlags);
 
-    ImGui::Text("HSV Range");
-    state.hsvDirty |= ImGui::SliderInt("Hue Min##h_min", &state.hsvRange.hMin, 0, 179);
-    state.hsvDirty |= ImGui::SliderInt("Hue Max##h_max", &state.hsvRange.hMax, 0, 179);
-    state.hsvDirty |= ImGui::SliderInt("Sat Min##s_min", &state.hsvRange.sMin, 0, 255);
-    state.hsvDirty |= ImGui::SliderInt("Sat Max##s_max", &state.hsvRange.sMax, 0, 255);
-    state.hsvDirty |= ImGui::SliderInt("Val Min##v_min", &state.hsvRange.vMin, 0, 255);
-    state.hsvDirty |= ImGui::SliderInt("Val Max##v_max", &state.hsvRange.vMax, 0, 255);
+    if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+        DrawModelSection(state);
 
-    ImGui::Separator();
-    ImGui::Text("Detection Stats");
-    ImGui::Text("Status: %s", result.detected ? "DETECTED" : "Not found");
-    if (result.detected)
-    {
-        ImGui::Text("Centroid: (%.3f, %.3f)", result.centroidNorm.x, result.centroidNorm.y);
-        ImGui::Text("Area: %.0f px", result.areaPixels);
-    }
+    if (ImGui::CollapsingHeader("Detector", ImGuiTreeNodeFlags_DefaultOpen))
+        DrawDetectorSection(state);
+
+    if (ImGui::CollapsingHeader("Markers", ImGuiTreeNodeFlags_DefaultOpen))
+        DrawMarkersSection(state, observations);
+
+    if (ImGui::CollapsingHeader("Recording"))
+        DrawRecordingSection(state);
+
+    if (ImGui::CollapsingHeader("Export"))
+        DrawExportSection(state);
 
     ImGui::End();
 }
 
-void UIManager::DrawRecordingPanel(UIState &state)
+void UIManager::DrawModelSection(UIState &state)
 {
-    ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH + kMarkerH), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kRecordH), ImGuiCond_Always);
-    ImGui::Begin("Recording Control", nullptr, kSidebarFlags);
+    ImGui::InputText("Path##model_path", state.modelPath, sizeof(state.modelPath));
+    if (ImGui::Button("Load Model", ImVec2(-1, 26)))
+        state.loadModelRequested = true;
 
+    if (!state.loadedModelPath.empty())
+    {
+        ImGui::TextDisabled("Loaded: %s", state.loadedModelPath.c_str());
+        ImGui::TextDisabled("Bones: %d", static_cast<int>(state.availableBones.size()));
+    }
+    ImGui::Spacing();
+}
+
+void UIManager::DrawDetectorSection(UIState &state)
+{
+    int kind = static_cast<int>(state.detectorKind);
+    if (ImGui::RadioButton("HSV##det_hsv", &kind, 0))
+    {
+        state.detectorKind = DetectorKind::HSV;
+        state.detectorDirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("ArUco##det_aruco", &kind, 1))
+    {
+        state.detectorKind = DetectorKind::ArUco;
+        state.detectorDirty = true;
+    }
+
+    if (state.detectorKind == DetectorKind::ArUco)
+    {
+        if (ImGui::Combo("Dictionary##aruco_dict", &state.arucoDictIndex, kArucoDicts, kArucoDictCount))
+        {
+            state.detectorDirty = true;
+        }
+        if (ImGui::InputFloat("Marker (m)##aruco_len", &state.arucoMarkerLengthMeters, 0.005f, 0.01f, "%.3f"))
+        {
+            if (state.arucoMarkerLengthMeters < 0.005f)
+                state.arucoMarkerLengthMeters = 0.005f;
+            state.detectorDirty = true;
+        }
+    }
+    ImGui::Spacing();
+}
+
+void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObservation> &observations)
+{
+    if (ImGui::Button("+ Add marker"))
+    {
+        MarkerSlot slot;
+        std::snprintf(slot.name, sizeof(slot.name), "marker_%d", static_cast<int>(state.markers.size()));
+        slot.arucoTagId = static_cast<int>(state.markers.size());
+        state.markers.push_back(slot);
+        state.markersDirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("- Remove last") && !state.markers.empty())
+    {
+        state.markers.pop_back();
+        state.markersDirty = true;
+    }
+
+    for (size_t i = 0; i < state.markers.size(); ++i)
+    {
+        auto &slot = state.markers[i];
+        ImGui::PushID(static_cast<int>(i));
+
+        bool open = ImGui::TreeNodeEx((void *)i, ImGuiTreeNodeFlags_DefaultOpen, "%zu: %s", i, slot.name);
+        if (open)
+        {
+            if (ImGui::InputText("Name##slot_name", slot.name, sizeof(slot.name)))
+                state.markersDirty = true;
+            if (ImGui::ColorEdit3("Color##slot_color", slot.overlayColor,
+                                  ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
+                state.markersDirty = true;
+
+            int observationId = (state.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : slot.arucoTagId;
+            bool matched = false;
+            for (const auto &o : observations)
+                if (o.id == observationId)
+                {
+                    matched = true;
+                    break;
+                }
+            ImGui::SameLine();
+            ImGui::TextColored(matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                               matched ? "detected" : "—");
+
+            if (state.detectorKind == DetectorKind::HSV)
+            {
+                ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
+                bool changed = false;
+                changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
+                changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
+                changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
+                changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
+                changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
+                changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
+                if (changed)
+                    state.markersDirty = true;
+            }
+            else
+            {
+                if (ImGui::InputInt("Tag id##aruco_id", &slot.arucoTagId))
+                    state.markersDirty = true;
+            }
+
+            int bindingIdx = static_cast<int>(slot.binding);
+            if (ImGui::Combo("Binding##binding", &bindingIdx, kBindingLabels,
+                             IM_ARRAYSIZE(kBindingLabels)))
+            {
+                slot.binding = static_cast<BindingKind>(bindingIdx);
+                state.markersDirty = true;
+            }
+
+            if (slot.binding == BindingKind::IKTarget)
+            {
+                if (BoneCombo("IK Root##ik_root", slot.ikRootBone, sizeof(slot.ikRootBone), state.availableBones))
+                    state.markersDirty = true;
+                if (BoneCombo("IK Mid##ik_mid", slot.ikMidBone, sizeof(slot.ikMidBone), state.availableBones))
+                    state.markersDirty = true;
+                if (BoneCombo("End##ik_end", slot.boneName, sizeof(slot.boneName), state.availableBones))
+                    state.markersDirty = true;
+            }
+            else
+            {
+                if (BoneCombo("Bone##bone", slot.boneName, sizeof(slot.boneName), state.availableBones))
+                    state.markersDirty = true;
+            }
+
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    ImGui::Spacing();
+}
+
+void UIManager::DrawRecordingSection(UIState &state)
+{
     ImGui::Text("Status: %s", state.isRecording ? "RECORDING" : "Idle");
     ImGui::ProgressBar(state.recordingDuration / 30.0f, ImVec2(-1, 0));
     ImGui::Text("Duration: %.2f s", state.recordingDuration);
@@ -167,16 +338,11 @@ void UIManager::DrawRecordingPanel(UIState &state)
     ImGui::Separator();
     if (ImGui::Button("RECONSTRUCT 3D", ImVec2(-1, 28)))
         state.reconstructRequested = true;
-
-    ImGui::End();
+    ImGui::Spacing();
 }
 
-void UIManager::DrawExportPanel(UIState &state)
+void UIManager::DrawExportSection(UIState &state)
 {
-    ImGui::SetNextWindowPos(ImVec2(0, kMenuBarH + kMarkerH + kRecordH), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kSidebarW, kExportH), ImGuiCond_Always);
-    ImGui::Begin("Export Settings", nullptr, kSidebarFlags);
-
     ImGui::Text("Output Format");
     const char *fmts[] = {"MP4", "AVI"};
     ImGui::Combo("##format", &state.exportFmtIndex, fmts, 2);
@@ -189,44 +355,71 @@ void UIManager::DrawExportPanel(UIState &state)
         state.saveJsonRequested = true;
     if (ImGui::Button("EXPORT VIDEO", ImVec2(-1, 24)))
         state.exportVideoRequested = true;
-
-    ImGui::End();
+    ImGui::Spacing();
 }
 
 void UIManager::DrawStatusBar(UIState &state, float fps, bool detectedThisFrame)
 {
     ImGuiIO &io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - 24));
-    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 24));
+    ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - kStatusBarH));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, kStatusBarH));
     ImGui::Begin("##statusbar", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-                 ImGuiWindowFlags_NoBringToFrontOnFocus);
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    ImGui::Text("FPS: %.1f | %s | Marker: %s", fps, state.isRecording ? "Recording" : "Idle",
-                detectedThisFrame ? "Detected" : "Not found");
+    ImGui::Text("FPS: %.1f | %s | Markers: %s", fps, state.isRecording ? "Recording" : "Idle",
+                detectedThisFrame ? "detected" : "none");
 
     ImGui::End();
 }
 
-void UIManager::DrawCameraFeedWindow(UIState &state)
+void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObservation> &observations)
 {
     const float W = 340.0f;
     const float H = 260.0f;
     const float margin = 10.0f;
-    const float statusBarH = 24.0f;
 
     ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(
-        ImVec2(display.x - W - margin, display.y - H - statusBarH - margin),
-        ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(display.x - W - margin, display.y - H - kStatusBarH - margin), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(W, H), ImGuiCond_Always);
     ImGui::Begin("Camera Feed", nullptr, kSidebarFlags);
 
     if (state.cameraFeedTexture != 0)
     {
-        ImGui::Image((ImTextureID)(uintptr_t)state.cameraFeedTexture,
-                     ImVec2(W - 20, H - 50));
+        ImVec2 imgSize(W - 20, H - 50);
+        ImVec2 imgPos = ImGui::GetCursorScreenPos();
+        ImGui::Image((ImTextureID)(uintptr_t)state.cameraFeedTexture, imgSize);
+
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        dl->PushClipRect(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y), true);
+
+        for (const auto &obs : observations)
+        {
+            // Match the observation back to a slot for color + label.
+            const MarkerSlot *slot = nullptr;
+            for (size_t i = 0; i < state.markers.size(); ++i)
+            {
+                int id = (state.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : state.markers[i].arucoTagId;
+                if (id == obs.id)
+                {
+                    slot = &state.markers[i];
+                    break;
+                }
+            }
+
+            ImU32 col = slot ? IM_COL32(static_cast<int>(slot->overlayColor[0] * 255.0f),
+                                        static_cast<int>(slot->overlayColor[1] * 255.0f),
+                                        static_cast<int>(slot->overlayColor[2] * 255.0f), 255)
+                             : IM_COL32(220, 220, 220, 255);
+
+            ImVec2 center(imgPos.x + obs.centroidNorm.x * imgSize.x, imgPos.y + obs.centroidNorm.y * imgSize.y);
+            dl->AddCircle(center, 10.0f, IM_COL32(0, 0, 0, 180), 16, 3.0f);
+            dl->AddCircle(center, 9.0f, col, 16, 2.0f);
+            dl->AddCircleFilled(center, 2.0f, col);
+            if (slot)
+                dl->AddText(ImVec2(center.x + 8.0f, center.y - 6.0f), col, slot->name);
+        }
+        dl->PopClipRect();
     }
     else
     {

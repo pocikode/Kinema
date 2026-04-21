@@ -60,10 +60,10 @@ void VideoExporter::DestroyFBO()
     }
 }
 
-bool VideoExporter::Export(const std::vector<Keyframe> &keyframes, Geni::GameObject *targetObj,
+bool VideoExporter::Export(const std::vector<Keyframe> &keyframes, Geni::Skeleton *skeleton,
                            int fps, const std::string &path, bool mp4)
 {
-    if (!targetObj || keyframes.empty())
+    if (!skeleton || keyframes.empty())
     {
         return false;
     }
@@ -103,8 +103,7 @@ bool VideoExporter::Export(const std::vector<Keyframe> &keyframes, Geni::GameObj
     // Render each keyframe
     for (const auto &kf : keyframes)
     {
-        targetObj->SetPosition(kf.position);
-        targetObj->SetRotation(kf.rotation);
+        MotionRecorder::ApplyKeyframe(kf, *skeleton);
 
         glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
         glViewport(0, 0, width, height);

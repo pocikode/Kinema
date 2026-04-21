@@ -1,9 +1,14 @@
 #pragma once
 #include <geni.h>
-#include "modules/MarkerDetector.h"
+#include "modules/ArucoMarkerDetector.h"
+#include "modules/HSVMarkerDetector.h"
+#include "modules/MarkerDetection.h"
 #include "modules/MotionRecorder.h"
+#include "modules/SkeletonDriver.h"
 #include "modules/VideoExporter.h"
 #include "ui/UIManager.h"
+
+#include <memory>
 
 class Application : public Geni::Application
 {
@@ -15,22 +20,27 @@ class Application : public Geni::Application
 
   private:
     void SetupScene();
-    glm::vec3 Unproject2DtoWorld(const MarkerResult &result, int frameW, int frameH);
+    void LoadRigFromState();
+    void RebuildDetectorFromState();
+    void RebuildBindingsFromState();
+    glm::vec3 Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels);
 
     // Modules
-    MarkerDetector m_markerDetector;
+    std::unique_ptr<IMarkerDetector> m_detector;
     MotionRecorder m_recorder;
     VideoExporter m_exporter;
     UIManager m_uiManager;
     UIState m_uiState;
+    SkeletonDriver m_skelDriver;
 
     // Scene objects (non-owning pointers — owned by Scene)
     Geni::Scene *m_scene = nullptr;
-    Geni::GameObject *m_targetObj = nullptr;
     Geni::GameObject *m_cameraObj = nullptr;
     Geni::GameObject *m_lightObj = nullptr;
     Geni::GameObject *m_gridObj = nullptr;
     Geni::GameObject *m_axesObj = nullptr;
+    Geni::GameObject *m_riggedObj = nullptr;
+    std::shared_ptr<Geni::Skeleton> m_riggedSkeleton;
 
     // Materials/Meshes (owning shared_ptrs)
     std::shared_ptr<Geni::Material> m_unlitMat;
@@ -39,10 +49,8 @@ class Application : public Geni::Application
 
     // Runtime state
     float m_fps = 0.0f;
-    int m_playFrame = 0;
+    float m_playbackTime = 0.0f;
     bool m_playback = false;
-    MarkerResult m_lastMarkerResult;
-    bool m_markerDetectedThisFrame = false;
 
     // Calibration for 2D→3D mapping
     float m_depthRefDist = 2.0f;

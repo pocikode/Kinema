@@ -11,7 +11,7 @@ set(KINEMA_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/external/geni)
 
 # OpenCV
-find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui objdetect calib3d)
 
 # ImGui via FetchContent
 include(FetchContent)
@@ -39,8 +39,11 @@ include_directories(${GLEW_INCLUDE_DIRS} ${GLFW_INCLUDE_DIRS})
 set(SRC_FILES
     src/main.cpp
     src/Application.cpp
-    src/modules/MarkerDetector.cpp
+    src/modules/MarkerDetection.cpp
+    src/modules/HSVMarkerDetector.cpp
+    src/modules/ArucoMarkerDetector.cpp
     src/modules/MotionRecorder.cpp
+    src/modules/SkeletonDriver.cpp
     src/modules/VideoExporter.cpp
     src/ui/UIManager.cpp
     ${IMGUI_SOURCES}

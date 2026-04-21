@@ -2,10 +2,90 @@
 #include "Application.h"
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <imgui.h>
+#include <GLFW/glfw3.h>
+
+#include <cstring>
+
+// Implemented in UIManager.cpp — maps a UIState::arucoDictIndex to the cv::aruco enum id.
+int UIManager_GetArucoDictId(int index);
+
+namespace
+{
+std::shared_ptr<Geni::Skeleton> FindSkeleton(Geni::GameObject *root)
+{
+    if (!root)
+        return nullptr;
+    if (auto *skin = root->GetComponent<Geni::SkinnedMeshComponent>())
+    {
+        return skin->GetSkeleton();
+    }
+    for (const auto &child : root->GetChildren())
+    {
+        if (auto s = FindSkeleton(child.get()))
+            return s;
+    }
+    return nullptr;
+}
+
+void CollectBoneNames(Geni::GameObject *root, std::vector<std::string> &out)
+{
+    if (!root)
+        return;
+    out.push_back(root->GetName());
+    for (const auto &child : root->GetChildren())
+    {
+        CollectBoneNames(child.get(), out);
+    }
+}
+
+// Seed the UI with sensible default bindings so a fresh launch with the Mixamo
+// smoke rig + three markers drives head + both hands immediately.
+MarkerSlot MakeSlot(const char *name, const float color[3], const char *bone,
+                    BindingKind kind = BindingKind::Position, const char *ikRoot = "", const char *ikMid = "")
+{
+    MarkerSlot slot;
+    std::strncpy(slot.name, name, sizeof(slot.name) - 1);
+    slot.overlayColor[0] = color[0];
+    slot.overlayColor[1] = color[1];
+    slot.overlayColor[2] = color[2];
+    slot.overlayColor[3] = 1.0f;
+    std::strncpy(slot.boneName, bone, sizeof(slot.boneName) - 1);
+    slot.binding = kind;
+    std::strncpy(slot.ikRootBone, ikRoot, sizeof(slot.ikRootBone) - 1);
+    std::strncpy(slot.ikMidBone, ikMid, sizeof(slot.ikMidBone) - 1);
+    return slot;
+}
+} // namespace
 
 bool Application::Init()
 {
-    m_markerDetector.Init(0);
+    // Defaults: three markers (head + both hands) targeting Mixamo bones.
+    const float red[3] = {1.0f, 0.35f, 0.35f};
+    const float green[3] = {0.35f, 1.0f, 0.4f};
+    const float blue[3] = {0.4f, 0.6f, 1.0f};
+
+    auto head = MakeSlot("head", red, "mixamorig:Head");
+    auto leftHand = MakeSlot("hand_L", green, "mixamorig:LeftHand", BindingKind::IKTarget, "mixamorig:LeftArm",
+                             "mixamorig:LeftForeArm");
+    auto rightHand = MakeSlot("hand_R", blue, "mixamorig:RightHand", BindingKind::IKTarget, "mixamorig:RightArm",
+                              "mixamorig:RightForeArm");
+    leftHand.arucoTagId = 1;
+    rightHand.arucoTagId = 2;
+
+    // Narrow default HSV bands so ambient color noise in the webcam doesn't register
+    // as a marker. Users can widen from the UI once their real markers are in frame.
+    // Red wraps the hue circle, so we expose slot 0 at the high end; the user can
+    // add a second range via the UI if their lighting pushes red to the low end.
+    head.hsv = {160, 179, 150, 255, 80, 255};
+    leftHand.hsv = {40, 80, 150, 255, 80, 255};
+    rightHand.hsv = {100, 130, 150, 255, 80, 255};
+
+    m_uiState.markers = {head, leftHand, rightHand};
+    m_uiState.markersDirty = true;
+    m_uiState.detectorDirty = true;
+    m_uiState.loadModelRequested = true;
+
     SetupScene();
     m_uiManager.Init(Geni::Engine::GetInstance().GetWindow());
     return true;
@@ -17,86 +97,145 @@ void Application::SetupScene()
     m_scene = new Geni::Scene();
     engine.SetScene(m_scene);
 
-    // Camera with OrbitCameraComponent
     m_cameraObj = m_scene->CreateObject("Camera");
     m_cameraObj->AddComponent(new Geni::CameraComponent());
     auto orbit = new Geni::OrbitCameraComponent();
-    orbit->SetTarget(glm::vec3(0, 0.3f, 0));
-    orbit->SetDistance(5.0f);
-    orbit->SetPitch(25.0f);
+    orbit->SetTarget(glm::vec3(0, 1.0f, 0));
+    orbit->SetDistance(4.0f);
+    orbit->SetPitch(15.0f);
     m_cameraObj->AddComponent(orbit);
     m_scene->SetMainCamera(m_cameraObj);
 
-    // Light
     m_lightObj = m_scene->CreateObject("Light");
     m_lightObj->SetPosition(glm::vec3(5, 8, 5));
     auto light = new Geni::LightComponent();
     light->SetColor(glm::vec3(1.0f, 0.95f, 0.9f));
     m_lightObj->AddComponent(light);
 
-    // Load unlit material (used for box, grid, and axes)
     m_unlitMat = Geni::Material::Load("materials/unlit.mat");
 
-    // Target box (the object being tracked)
-    auto boxMesh = Geni::Mesh::CreateBox(glm::vec3(0.3f));
-    m_targetObj = m_scene->CreateObject("Target");
-    m_targetObj->SetPosition(glm::vec3(0, 0.3f, 0));
-    m_targetObj->AddComponent(new Geni::MeshComponent(m_unlitMat, boxMesh));
-
-    // XZ Grid: 20×20, 1-unit spacing, ±10 units
     std::vector<glm::vec3> gridPos, gridCol;
-    glm::vec3 gridColor = glm::vec3(0.4f);
-
+    glm::vec3 gridColor(0.4f);
     for (int i = -10; i <= 10; ++i)
     {
-        // X-parallel lines (along Z)
         gridPos.push_back({-10.0f, 0.0f, static_cast<float>(i)});
         gridPos.push_back({10.0f, 0.0f, static_cast<float>(i)});
         gridCol.push_back(gridColor);
         gridCol.push_back(gridColor);
-
-        // Z-parallel lines (along X)
         gridPos.push_back({static_cast<float>(i), 0.0f, -10.0f});
         gridPos.push_back({static_cast<float>(i), 0.0f, 10.0f});
         gridCol.push_back(gridColor);
         gridCol.push_back(gridColor);
     }
-
     m_gridMesh = Geni::Mesh::CreateLines(gridPos, gridCol);
     m_gridObj = m_scene->CreateObject("Grid");
     m_gridObj->AddComponent(new Geni::MeshComponent(m_unlitMat, m_gridMesh));
 
-    // RGB Coordinate Axes (length 1.5)
     std::vector<glm::vec3> axesPos = {
-        {0, 0, 0}, {1.5f, 0, 0}, // X-axis
-        {0, 0, 0}, {0, 1.5f, 0}, // Y-axis
-        {0, 0, 0}, {0, 0, 1.5f}  // Z-axis
+        {0, 0, 0}, {1.5f, 0, 0}, {0, 0, 0}, {0, 1.5f, 0}, {0, 0, 0}, {0, 0, 1.5f},
     };
     std::vector<glm::vec3> axesCol = {
-        {1, 0, 0}, {1, 0, 0}, // Red X
-        {0, 1, 0}, {0, 1, 0}, // Green Y
-        {0, 0, 1}, {0, 0, 1}  // Blue Z
+        {1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, 1},
     };
-
     m_axesMesh = Geni::Mesh::CreateLines(axesPos, axesCol);
     m_axesObj = m_scene->CreateObject("Axes");
     m_axesObj->AddComponent(new Geni::MeshComponent(m_unlitMat, m_axesMesh));
 }
 
-glm::vec3 Application::Unproject2DtoWorld(const MarkerResult &result, int frameW, int frameH)
+void Application::LoadRigFromState()
 {
-    // Normalize centroid to [-1, 1] with Y flipped
-    float worldX = (result.centroidNorm.x - 0.5f) * 2.0f;
-    float worldY = -(result.centroidNorm.y - 0.5f) * 2.0f;
+    // Destroy any previously loaded rig before loading its replacement.
+    if (m_riggedObj)
+    {
+        m_riggedObj->MarkForDestroy();
+        m_riggedObj = nullptr;
+        m_riggedSkeleton.reset();
+        m_uiState.availableBones.clear();
+    }
 
-    // Estimate depth from bounding box area
-    // Depth ∝ 1/sqrt(area) because projected area ∝ 1/z²
-    float worldZ = m_depthRefDist * glm::sqrt(m_depthRefArea / (result.areaPixels + 1.0f));
+    m_riggedObj = Geni::GameObject::LoadGLTF(m_uiState.modelPath);
+    if (!m_riggedObj)
+    {
+        m_uiState.loadedModelPath = std::string("FAILED: ") + m_uiState.modelPath;
+        return;
+    }
 
-    // Scale X and Y by perspective (depth affects field size)
+    m_riggedObj->SetPosition(glm::vec3(0.0f));
+    m_riggedSkeleton = FindSkeleton(m_riggedObj);
+    m_uiState.loadedModelPath = m_uiState.modelPath;
+    m_uiState.availableBones.clear();
+    CollectBoneNames(m_riggedObj, m_uiState.availableBones);
+    m_uiState.markersDirty = true; // re-validate bindings against the new skeleton
+}
+
+void Application::RebuildDetectorFromState()
+{
+    // Preserve camera access across detector swaps: destroy old, then open new.
+    if (m_detector)
+        m_detector->Destroy();
+
+    if (m_uiState.detectorKind == DetectorKind::HSV)
+    {
+        auto hsv = std::make_unique<HSVMarkerDetector>();
+        m_detector = std::move(hsv);
+    }
+    else
+    {
+        auto aruco = std::make_unique<ArucoMarkerDetector>();
+        aruco->SetDictionary(UIManager_GetArucoDictId(m_uiState.arucoDictIndex));
+        aruco->SetMarkerLengthMeters(m_uiState.arucoMarkerLengthMeters);
+        m_detector = std::move(aruco);
+    }
+    m_detector->Init(0);
+}
+
+void Application::RebuildBindingsFromState()
+{
+    std::vector<MarkerBinding> bindings;
+    std::vector<IKChain> chains;
+
+    for (size_t i = 0; i < m_uiState.markers.size(); ++i)
+    {
+        const auto &slot = m_uiState.markers[i];
+        int observationId =
+            (m_uiState.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : slot.arucoTagId;
+
+        if (slot.binding == BindingKind::IKTarget)
+        {
+            if (slot.ikRootBone[0] == 0 || slot.ikMidBone[0] == 0 || slot.boneName[0] == 0)
+                continue;
+            IKChain chain;
+            chain.markerId = observationId;
+            chain.rootBoneName = slot.ikRootBone;
+            chain.midBoneName = slot.ikMidBone;
+            chain.endBoneName = slot.boneName;
+            chain.poleHint = glm::vec3(0.0f, 0.0f, 1.0f);
+            chains.push_back(chain);
+        }
+        else
+        {
+            if (slot.boneName[0] == 0)
+                continue;
+            MarkerBinding b;
+            b.markerId = observationId;
+            b.boneName = slot.boneName;
+            b.mode = (slot.binding == BindingKind::PositionRotation) ? MarkerBinding::Mode::PositionRotation
+                                                                     : MarkerBinding::Mode::Position;
+            bindings.push_back(b);
+        }
+    }
+
+    m_skelDriver.SetBindings(std::move(bindings));
+    m_skelDriver.SetIKChains(std::move(chains));
+}
+
+glm::vec3 Application::Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels)
+{
+    float worldX = (centroidNorm.x - 0.5f) * 2.0f;
+    float worldY = -(centroidNorm.y - 0.5f) * 2.0f;
+    float worldZ = m_depthRefDist * glm::sqrt(m_depthRefArea / (areaPixels + 1.0f));
     worldX *= (worldZ / m_depthRefDist);
     worldY *= (worldZ / m_depthRefDist);
-
     return glm::vec3(worldX, worldY, worldZ);
 }
 
@@ -104,94 +243,120 @@ void Application::Update(float deltaTime)
 {
     m_fps = 1.0f / (deltaTime > 0 ? deltaTime : 1e-4f);
 
-    // Update scene (camera, physics, etc.)
-    m_scene->Update(deltaTime);
-
-    // Marker detection
-    m_lastMarkerResult = m_markerDetector.Update(m_uiState.hsvRange);
-    m_markerDetectedThisFrame = m_lastMarkerResult.detected;
-
-    if (m_lastMarkerResult.detected)
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse)
     {
-        glm::vec3 pos3d =
-            Unproject2DtoWorld(m_lastMarkerResult, m_markerDetector.GetFrameWidth(), m_markerDetector.GetFrameHeight());
-        m_targetObj->SetPosition(pos3d);
-
-        // Record if active
-        if (m_recorder.IsRecording())
-        {
-            m_recorder.AddKeyframe(pos3d, glm::quat(1, 0, 0, 0));
-        }
+        auto &im = Geni::Engine::GetInstance().GetInputManager();
+        im.SetMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT, false);
+        im.SetMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT, false);
+        im.SetMousePositionOld(im.GetMousePositionCurrent());
+        im.SetScrollDelta(0.0f);
     }
 
-    // Update UI state from recorder
+    m_scene->Update(deltaTime);
+
+    // React to UI-driven state changes.
+    if (m_uiState.loadModelRequested)
+    {
+        LoadRigFromState();
+        m_uiState.loadModelRequested = false;
+    }
+    if (m_uiState.detectorDirty)
+    {
+        RebuildDetectorFromState();
+        m_uiState.detectorDirty = false;
+    }
+    if (m_uiState.markersDirty)
+    {
+        RebuildBindingsFromState();
+        m_uiState.markersDirty = false;
+    }
+
+    // Each frame, sync per-slot HSV ranges into the detector — cheap and lets the
+    // slider feedback be immediate without needing an explicit "apply" press.
+    if (auto *hsv = dynamic_cast<HSVMarkerDetector *>(m_detector.get()))
+    {
+        std::vector<HSVRange> ranges;
+        ranges.reserve(m_uiState.markers.size());
+        for (const auto &slot : m_uiState.markers)
+            ranges.push_back(slot.hsv);
+        hsv->SetRanges(ranges);
+    }
+
+    std::vector<MarkerObservation> observations;
+    if (m_detector)
+        observations = m_detector->Detect();
+
+    if (m_playback && m_riggedSkeleton)
+    {
+        // Playback overrides live detection so the recorded motion renders untouched.
+        const auto &keyframes = m_recorder.GetKeyframes();
+        if (keyframes.empty())
+        {
+            m_playback = false;
+        }
+        else
+        {
+            m_playbackTime += deltaTime;
+            size_t idx = 0;
+            while (idx + 1 < keyframes.size() && keyframes[idx + 1].timestamp <= m_playbackTime)
+                ++idx;
+            MotionRecorder::ApplyKeyframe(keyframes[idx], *m_riggedSkeleton);
+            if (m_playbackTime >= keyframes.back().timestamp)
+                m_playback = false;
+        }
+    }
+    else if (m_riggedSkeleton)
+    {
+        m_skelDriver.Apply(*m_riggedSkeleton, observations, [this](const MarkerObservation &o) {
+            return Unproject2DtoWorld(o.centroidNorm, o.areaPixels);
+        });
+
+        if (m_recorder.IsRecording())
+            m_recorder.AddSkeletonKeyframe(*m_riggedSkeleton);
+    }
+
     m_uiState.isRecording = m_recorder.IsRecording();
     m_uiState.keyframeCount = m_recorder.GetKeyframeCount();
     m_uiState.recordingDuration = m_recorder.GetDuration();
 
-    // Always upload camera feed (panel is always visible now)
-    if (m_markerDetector.IsOpen())
+    if (m_detector && m_detector->IsOpen())
     {
-        m_uiManager.UploadCameraFeed(m_markerDetector.GetLastFrame(), m_uiState);
+        m_uiManager.UploadCameraFeed(m_detector->GetLastFrame(), m_uiState);
     }
 
-    // Build ImGui command lists
     auto *cam = m_cameraObj->GetComponent<Geni::CameraComponent>();
     glm::mat4 view = cam->GetViewMatrix();
-    m_uiManager.BuildUI(m_uiState, m_lastMarkerResult, m_markerDetectedThisFrame, view);
+    m_uiManager.BuildUI(m_uiState, observations, view);
 
-    // Handle button requests from UI
     if (m_uiState.startRecordRequested)
     {
         m_recorder.StartRecording();
         m_uiState.startRecordRequested = false;
     }
-
     if (m_uiState.stopRecordRequested)
     {
         m_recorder.StopRecording();
         m_uiState.stopRecordRequested = false;
     }
-
     if (m_uiState.reconstructRequested)
     {
-        m_playFrame = 0;
-        m_playback = true;
+        m_playbackTime = 0.0f;
+        m_playback = !m_recorder.GetKeyframes().empty();
         m_uiState.reconstructRequested = false;
     }
-
     if (m_uiState.saveJsonRequested)
     {
         std::string path = std::string(m_uiState.exportPath) + ".json";
         m_recorder.SaveToJson(path);
         m_uiState.saveJsonRequested = false;
     }
-
     if (m_uiState.exportVideoRequested)
     {
         std::string ext = (m_uiState.exportFmtIndex == 0) ? ".mp4" : ".avi";
         std::string path = std::string(m_uiState.exportPath) + ext;
-        m_exporter.Export(
-            m_recorder.GetKeyframes(), m_targetObj, m_uiState.exportFps, path, m_uiState.exportFmtIndex == 0
-        );
+        m_exporter.Export(m_recorder.GetKeyframes(), m_riggedSkeleton.get(), m_uiState.exportFps, path,
+                          m_uiState.exportFmtIndex == 0);
         m_uiState.exportVideoRequested = false;
-    }
-
-    // Reconstruction playback: advance through keyframes
-    if (m_playback && !m_recorder.GetKeyframes().empty())
-    {
-        const auto &keyframes = m_recorder.GetKeyframes();
-        if (m_playFrame < (int)keyframes.size())
-        {
-            const auto &kf = keyframes[m_playFrame];
-            m_targetObj->SetPosition(kf.position);
-            m_targetObj->SetRotation(kf.rotation);
-            m_playFrame++;
-        }
-        else
-        {
-            m_playback = false;
-        }
     }
 }
 
@@ -203,5 +368,8 @@ void Application::Render()
 void Application::Destroy()
 {
     m_uiManager.Destroy();
-    m_markerDetector.Destroy();
+    if (m_detector)
+    {
+        m_detector->Destroy();
+    }
 }
