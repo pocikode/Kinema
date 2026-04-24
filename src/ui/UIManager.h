@@ -22,6 +22,7 @@ enum class BindingKind
     Position,         // bone.worldPos = unproject(marker)
     PositionRotation, // bone.worldPos + bone.worldRot (ArUco only)
     IKTarget,         // marker is end-effector; ikRoot + ikMid posed via analytical 2-bone IK
+    LookAt,           // bone rotates toward marker; position is never changed (no neck stretch)
 };
 
 // One user-configured marker. For HSV, matches by slot index. For ArUco, matches by tag id.
@@ -56,6 +57,7 @@ struct UIState
     std::string loadedModelPath;
     std::vector<std::string> availableBones;
     bool loadModelRequested = false;
+    bool resetModelRequested = false;
 
     // Recording
     bool isRecording = false;
@@ -68,9 +70,11 @@ struct UIState
     // Export
     int exportFmtIndex = 0;
     int exportFps = 30;
-    char exportPath[256] = "output";
+    char exportDir[512] = "";   // filled by Application::Init ($HOME or cwd)
+    char exportName[128] = "";  // filled by Application::Init (kinema_YYYYMMDD)
     bool saveJsonRequested = false;
     bool exportVideoRequested = false;
+    bool exportGlbRequested = false;
 
     // Camera feed texture
     GLuint cameraFeedTexture = 0;

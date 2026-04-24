@@ -1,6 +1,7 @@
 #pragma once
 #include <geni.h>
 #include "modules/ArucoMarkerDetector.h"
+#include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
 #include "modules/MarkerDetection.h"
 #include "modules/MotionRecorder.h"
@@ -29,6 +30,7 @@ class Application : public Geni::Application
     std::unique_ptr<IMarkerDetector> m_detector;
     MotionRecorder m_recorder;
     VideoExporter m_exporter;
+    GlbExporter m_glbExporter;
     UIManager m_uiManager;
     UIState m_uiState;
     SkeletonDriver m_skelDriver;

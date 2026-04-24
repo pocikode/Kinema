@@ -5,7 +5,11 @@
 #include <imgui.h>
 #include <GLFW/glfw3.h>
 
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <filesystem>
+#include <string>
 
 // Implemented in UIManager.cpp — maps a UIState::arucoDictIndex to the cv::aruco enum id.
 int UIManager_GetArucoDictId(int index);
@@ -65,7 +69,7 @@ bool Application::Init()
     const float green[3] = {0.35f, 1.0f, 0.4f};
     const float blue[3] = {0.4f, 0.6f, 1.0f};
 
-    auto head = MakeSlot("head", red, "mixamorig:Head");
+    auto head = MakeSlot("head", red, "mixamorig:Head", BindingKind::LookAt);
     auto leftHand = MakeSlot("hand_L", green, "mixamorig:LeftHand", BindingKind::IKTarget, "mixamorig:LeftArm",
                              "mixamorig:LeftForeArm");
     auto rightHand = MakeSlot("hand_R", blue, "mixamorig:RightHand", BindingKind::IKTarget, "mixamorig:RightArm",
@@ -85,6 +89,23 @@ bool Application::Init()
     m_uiState.markersDirty = true;
     m_uiState.detectorDirty = true;
     m_uiState.loadModelRequested = true;
+
+    // Default export filename: kinema_YYYYMMDD — user can overwrite from the UI.
+    {
+        std::time_t t = std::time(nullptr);
+        std::tm tmLocal{};
+#if defined(_WIN32)
+        localtime_s(&tmLocal, &t);
+#else
+        localtime_r(&t, &tmLocal);
+#endif
+        std::strftime(m_uiState.exportName, sizeof(m_uiState.exportName), "kinema_%Y%m%d", &tmLocal);
+    }
+    if (const char *home = std::getenv("HOME"))
+    {
+        std::strncpy(m_uiState.exportDir, home, sizeof(m_uiState.exportDir) - 1);
+        m_uiState.exportDir[sizeof(m_uiState.exportDir) - 1] = 0;
+    }
 
     SetupScene();
     m_uiManager.Init(Geni::Engine::GetInstance().GetWindow());
@@ -220,6 +241,7 @@ void Application::RebuildBindingsFromState()
             b.markerId = observationId;
             b.boneName = slot.boneName;
             b.mode = (slot.binding == BindingKind::PositionRotation) ? MarkerBinding::Mode::PositionRotation
+                   : (slot.binding == BindingKind::LookAt)          ? MarkerBinding::Mode::LookAt
                                                                      : MarkerBinding::Mode::Position;
             bindings.push_back(b);
         }
@@ -259,6 +281,14 @@ void Application::Update(float deltaTime)
     {
         LoadRigFromState();
         m_uiState.loadModelRequested = false;
+    }
+    if (m_uiState.resetModelRequested)
+    {
+        if (m_riggedObj)
+            m_riggedObj->SetPosition(glm::vec3(0.0f));
+        m_playback = false;
+        m_playbackTime = 0.0f;
+        m_uiState.resetModelRequested = false;
     }
     if (m_uiState.detectorDirty)
     {
@@ -344,19 +374,39 @@ void Application::Update(float deltaTime)
         m_playback = !m_recorder.GetKeyframes().empty();
         m_uiState.reconstructRequested = false;
     }
+    auto joinPath = [this](const char *ext) {
+        std::string p = m_uiState.exportDir;
+        if (!p.empty() && p.back() != '/' && p.back() != '\\')
+            p += '/';
+        return p + m_uiState.exportName + ext;
+    };
+
     if (m_uiState.saveJsonRequested)
     {
-        std::string path = std::string(m_uiState.exportPath) + ".json";
-        m_recorder.SaveToJson(path);
+        m_recorder.SaveToJson(joinPath(".json"));
         m_uiState.saveJsonRequested = false;
     }
     if (m_uiState.exportVideoRequested)
     {
-        std::string ext = (m_uiState.exportFmtIndex == 0) ? ".mp4" : ".avi";
-        std::string path = std::string(m_uiState.exportPath) + ext;
-        m_exporter.Export(m_recorder.GetKeyframes(), m_riggedSkeleton.get(), m_uiState.exportFps, path,
+        const char *ext = (m_uiState.exportFmtIndex == 0) ? ".mp4" : ".avi";
+        m_exporter.Export(m_recorder.GetKeyframes(), m_riggedSkeleton.get(), m_uiState.exportFps, joinPath(ext),
                           m_uiState.exportFmtIndex == 0);
         m_uiState.exportVideoRequested = false;
+    }
+    if (m_uiState.exportGlbRequested)
+    {
+        if (m_riggedSkeleton && !m_uiState.loadedModelPath.empty())
+        {
+            // loadedModelPath is the same relative string LoadGLTF was handed; cgltf_parse_file
+            // uses fopen() so we must resolve it against the assets folder ourselves. An
+            // absolute right-hand operand wins, so user-entered absolute paths still work.
+            std::filesystem::path src = m_uiState.loadedModelPath;
+            if (src.is_relative())
+                src = Geni::Engine::GetInstance().GetFileSystem().GetAssetsFolder() / src;
+            m_glbExporter.Export(src.string(), m_recorder.GetKeyframes(), *m_riggedSkeleton,
+                                 joinPath(".glb"));
+        }
+        m_uiState.exportGlbRequested = false;
     }
 }
 

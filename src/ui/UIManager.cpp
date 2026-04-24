@@ -6,6 +6,7 @@
 #include <glm/mat3x3.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/aruco_dictionary.hpp>
+#include <portable-file-dialogs.h>
 
 #include <cstring>
 
@@ -24,7 +25,84 @@ const int kArucoDictIds[] = {cv::aruco::DICT_4X4_50, cv::aruco::DICT_4X4_100, cv
                              cv::aruco::DICT_5X5_100, cv::aruco::DICT_6X6_250};
 constexpr int kArucoDictCount = static_cast<int>(sizeof(kArucoDicts) / sizeof(kArucoDicts[0]));
 
-const char *const kBindingLabels[] = {"Position", "Position + Rotation", "IK Target (2-bone)"};
+const char *const kBindingLabels[] = {"Position", "Position + Rotation", "IK Target (2-bone)", "Look At (rotation only)"};
+
+// Tokyo Night palette — https://github.com/enkia/tokyo-night-vscode-theme
+void ApplyTokyoNightTheme()
+{
+    ImGuiStyle &style = ImGui::GetStyle();
+    ImVec4 *c = style.Colors;
+
+    const ImVec4 bg       = ImVec4(0.102f, 0.106f, 0.149f, 1.00f); // #1a1b26
+    const ImVec4 bgDark   = ImVec4(0.086f, 0.086f, 0.118f, 1.00f); // #16161e
+    const ImVec4 bgHigh   = ImVec4(0.161f, 0.180f, 0.259f, 1.00f); // #292e42
+    const ImVec4 surface  = ImVec4(0.231f, 0.259f, 0.380f, 1.00f); // #3b4261
+    const ImVec4 terminal = ImVec4(0.255f, 0.282f, 0.408f, 1.00f); // #414868
+    const ImVec4 fg       = ImVec4(0.753f, 0.792f, 0.961f, 1.00f); // #c0caf5
+    const ImVec4 fgDark   = ImVec4(0.663f, 0.694f, 0.839f, 1.00f); // #a9b1d6
+    const ImVec4 comment  = ImVec4(0.337f, 0.373f, 0.537f, 1.00f); // #565f89
+    const ImVec4 blue     = ImVec4(0.478f, 0.635f, 0.969f, 1.00f); // #7aa2f7
+    const ImVec4 cyan     = ImVec4(0.490f, 0.812f, 1.000f, 1.00f); // #7dcfff
+    const ImVec4 magenta  = ImVec4(0.733f, 0.604f, 0.969f, 1.00f); // #bb9af7
+    const ImVec4 red      = ImVec4(0.969f, 0.463f, 0.557f, 1.00f); // #f7768e
+
+    c[ImGuiCol_Text]                 = fg;
+    c[ImGuiCol_TextDisabled]         = comment;
+    c[ImGuiCol_WindowBg]             = bg;
+    c[ImGuiCol_ChildBg]              = bg;
+    c[ImGuiCol_PopupBg]              = bgDark;
+    c[ImGuiCol_Border]               = ImVec4(surface.x, surface.y, surface.z, 0.60f);
+    c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_FrameBg]              = bgDark;
+    c[ImGuiCol_FrameBgHovered]       = bgHigh;
+    c[ImGuiCol_FrameBgActive]        = surface;
+    c[ImGuiCol_TitleBg]              = bgDark;
+    c[ImGuiCol_TitleBgActive]        = bgHigh;
+    c[ImGuiCol_TitleBgCollapsed]     = bgDark;
+    c[ImGuiCol_MenuBarBg]            = bgDark;
+    c[ImGuiCol_ScrollbarBg]          = bgDark;
+    c[ImGuiCol_ScrollbarGrab]        = surface;
+    c[ImGuiCol_ScrollbarGrabHovered] = terminal;
+    c[ImGuiCol_ScrollbarGrabActive]  = comment;
+    c[ImGuiCol_CheckMark]            = blue;
+    c[ImGuiCol_SliderGrab]           = blue;
+    c[ImGuiCol_SliderGrabActive]     = cyan;
+    c[ImGuiCol_Button]               = bgHigh;
+    c[ImGuiCol_ButtonHovered]        = surface;
+    c[ImGuiCol_ButtonActive]         = terminal;
+    c[ImGuiCol_Header]               = bgHigh;
+    c[ImGuiCol_HeaderHovered]        = surface;
+    c[ImGuiCol_HeaderActive]         = terminal;
+    c[ImGuiCol_Separator]            = surface;
+    c[ImGuiCol_SeparatorHovered]     = blue;
+    c[ImGuiCol_SeparatorActive]      = cyan;
+    c[ImGuiCol_ResizeGrip]           = surface;
+    c[ImGuiCol_ResizeGripHovered]    = blue;
+    c[ImGuiCol_ResizeGripActive]     = cyan;
+    c[ImGuiCol_Tab]                  = bgDark;
+    c[ImGuiCol_TabHovered]           = surface;
+    c[ImGuiCol_TabActive]            = bgHigh;
+    c[ImGuiCol_TabUnfocused]         = bgDark;
+    c[ImGuiCol_TabUnfocusedActive]   = bgHigh;
+    c[ImGuiCol_PlotLines]            = blue;
+    c[ImGuiCol_PlotLinesHovered]     = cyan;
+    c[ImGuiCol_PlotHistogram]        = magenta;
+    c[ImGuiCol_PlotHistogramHovered] = red;
+    c[ImGuiCol_TextSelectedBg]       = ImVec4(blue.x, blue.y, blue.z, 0.35f);
+    c[ImGuiCol_NavHighlight]         = blue;
+    c[ImGuiCol_DragDropTarget]       = cyan;
+    (void)fgDark;
+
+    style.WindowRounding    = 6.0f;
+    style.FrameRounding     = 4.0f;
+    style.GrabRounding      = 4.0f;
+    style.PopupRounding     = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.TabRounding       = 4.0f;
+    style.WindowPadding     = ImVec2(10, 10);
+    style.FramePadding      = ImVec2(8, 4);
+    style.ItemSpacing       = ImVec2(8, 6);
+}
 
 // Helper: combo over available bone names writing into a char[N] field.
 // Empty dropdown if the model hasn't been loaded yet.
@@ -70,7 +148,7 @@ bool UIManager::Init(GLFWwindow *window)
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    ImGui::StyleColorsDark();
+    ApplyTokyoNightTheme();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
@@ -183,8 +261,15 @@ void UIManager::DrawSidebar(UIState &state, const std::vector<MarkerObservation>
 void UIManager::DrawModelSection(UIState &state)
 {
     ImGui::InputText("Path##model_path", state.modelPath, sizeof(state.modelPath));
-    if (ImGui::Button("Load Model", ImVec2(-1, 26)))
+
+    float avail = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float halfW = (avail - spacing) * 0.5f;
+    if (ImGui::Button("Load Model", ImVec2(halfW, 26)))
         state.loadModelRequested = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Reset", ImVec2(halfW, 26)))
+        state.resetModelRequested = true;
 
     if (!state.loadedModelPath.empty())
     {
@@ -348,13 +433,29 @@ void UIManager::DrawExportSection(UIState &state)
     ImGui::Combo("##format", &state.exportFmtIndex, fmts, 2);
 
     ImGui::SliderInt("FPS##export_fps", &state.exportFps, 1, 60);
-    ImGui::InputText("Output Path##export_path", state.exportPath, sizeof(state.exportPath));
+
+    ImGui::InputText("Directory##export_dir", state.exportDir, sizeof(state.exportDir));
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...##export_dir_browse"))
+    {
+        std::string start = state.exportDir[0] ? std::string(state.exportDir) : std::string(".");
+        std::string picked = pfd::select_folder("Choose export directory", start).result();
+        if (!picked.empty())
+        {
+            std::strncpy(state.exportDir, picked.c_str(), sizeof(state.exportDir) - 1);
+            state.exportDir[sizeof(state.exportDir) - 1] = 0;
+        }
+    }
+
+    ImGui::InputText("Filename (no extension)##export_name", state.exportName, sizeof(state.exportName));
 
     ImGui::Separator();
     if (ImGui::Button("SAVE JSON", ImVec2(-1, 24)))
         state.saveJsonRequested = true;
     if (ImGui::Button("EXPORT VIDEO", ImVec2(-1, 24)))
         state.exportVideoRequested = true;
+    if (ImGui::Button("EXPORT GLB", ImVec2(-1, 24)))
+        state.exportGlbRequested = true;
     ImGui::Spacing();
 }
 

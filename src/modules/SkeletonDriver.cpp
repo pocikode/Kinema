@@ -212,11 +212,51 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
             continue;
 
         glm::vec3 targetWorld = unproject(*it->second) + binding.worldOffset;
-        bone->SetPosition(WorldToLocalPos(bone, targetWorld));
 
-        if (binding.mode == MarkerBinding::Mode::PositionRotation && it->second->hasOrientation)
+        if (binding.mode == MarkerBinding::Mode::LookAt)
         {
-            bone->SetRotation(WorldToLocalRot(bone, it->second->orientation));
+            // Rotate the bone so it "faces" the direction of the marker from the scene
+            // origin, without ever translating the bone (prevents neck/spine stretching).
+            glm::mat4 bindWorld = glm::inverse(skeleton.GetInverseBindMatrix(jointIndex));
+            glm::vec3 boneBindPos = glm::vec3(bindWorld[3]);
+            glm::quat boneBindRot = glm::quat_cast(bindWorld);
+
+            // Bind-pose "up" direction: from this bone toward its first skeleton child.
+            glm::vec3 bindDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            for (const auto &child : bone->GetChildren())
+            {
+                int ci = skeleton.FindJoint(child->GetName());
+                if (ci >= 0)
+                {
+                    glm::vec3 childBindPos =
+                        glm::vec3(glm::inverse(skeleton.GetInverseBindMatrix(ci))[3]);
+                    glm::vec3 d = childBindPos - boneBindPos;
+                    if (glm::length(d) > 1e-5f)
+                    {
+                        bindDir = glm::normalize(d);
+                        break;
+                    }
+                }
+            }
+
+            // Desired direction: from the scene origin toward the marker.
+            glm::vec3 toTarget = targetWorld;
+            if (glm::length(toTarget) > 1e-5f)
+                toTarget = glm::normalize(toTarget);
+            else
+                toTarget = bindDir;
+
+            glm::quat delta = RotationBetween(bindDir, toTarget);
+            bone->SetRotation(WorldToLocalRot(bone, delta * boneBindRot));
+        }
+        else
+        {
+            bone->SetPosition(WorldToLocalPos(bone, targetWorld));
+
+            if (binding.mode == MarkerBinding::Mode::PositionRotation && it->second->hasOrientation)
+            {
+                bone->SetRotation(WorldToLocalRot(bone, it->second->orientation));
+            }
         }
     }
 

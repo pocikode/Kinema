@@ -45,6 +45,7 @@ set(SRC_FILES
     src/modules/MotionRecorder.cpp
     src/modules/SkeletonDriver.cpp
     src/modules/VideoExporter.cpp
+    src/modules/GlbExporter.cpp
     src/ui/UIManager.cpp
     ${IMGUI_SOURCES}
 )
@@ -59,7 +60,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${GLEW_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
     external/geni/thirdparty/stb
+    external/geni/thirdparty/cgltf
     external/geni/include
+    external/pfd
 )
 
 target_link_libraries(${PROJECT_NAME}

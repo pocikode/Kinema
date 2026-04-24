@@ -100,33 +100,56 @@ bool VideoExporter::Export(const std::vector<Keyframe> &keyframes, Geni::Skeleto
         return false;
     }
 
+    auto cameraObj = scene->GetMainCamera();
+    auto cameraComp = cameraObj ? cameraObj->GetComponent<Geni::CameraComponent>() : nullptr;
+    if (!cameraComp)
+    {
+        DestroyFBO();
+        return false;
+    }
+
+    const float aspect = static_cast<float>(width) / static_cast<float>(height);
+
+    // The current frame's Application::Update has already submitted live-pose draws
+    // into the queue. Drain them once into the FBO (not written to file) so the
+    // loop below starts with a clean queue and each exported frame reflects only
+    // the applied keyframe pose.
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+        glViewport(0, 0, width, height);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        Geni::CameraData drainCam;
+        drainCam.viewMatrix = cameraComp->GetViewMatrix();
+        drainCam.projectionMatrix = cameraComp->GetProjectionMatrix(aspect);
+        drainCam.position = cameraObj->GetWorldPosition();
+        auto lights = scene->CollectLights();
+        engine.GetRenderQueue().Draw(engine.GetGraphicsAPI(), drainCam, lights);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
     // Render each keyframe
     for (const auto &kf : keyframes)
     {
         MotionRecorder::ApplyKeyframe(kf, *skeleton);
+
+        // Re-run the scene update so bone GameObjects propagate their new local
+        // transforms and MeshComponent / SkinnedMeshComponent submit draws with
+        // the freshly built skinning palette for this keyframe.
+        scene->Update(0.0f);
 
         glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
         glViewport(0, 0, width, height);
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Render scene to FBO
-        auto cameraObj = scene->GetMainCamera();
-        if (cameraObj)
-        {
-            auto cameraComp = cameraObj->GetComponent<Geni::CameraComponent>();
-            if (cameraComp)
-            {
-                float aspect = static_cast<float>(width) / static_cast<float>(height);
-                Geni::CameraData cameraData;
-                cameraData.viewMatrix = cameraComp->GetViewMatrix();
-                cameraData.projectionMatrix = cameraComp->GetProjectionMatrix(aspect);
-                cameraData.position = cameraObj->GetWorldPosition();
+        Geni::CameraData cameraData;
+        cameraData.viewMatrix = cameraComp->GetViewMatrix();
+        cameraData.projectionMatrix = cameraComp->GetProjectionMatrix(aspect);
+        cameraData.position = cameraObj->GetWorldPosition();
 
-                auto lights = scene->CollectLights();
-                engine.GetRenderQueue().Draw(engine.GetGraphicsAPI(), cameraData, lights);
-            }
-        }
+        auto lights = scene->CollectLights();
+        engine.GetRenderQueue().Draw(engine.GetGraphicsAPI(), cameraData, lights);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -136,6 +159,12 @@ bool VideoExporter::Export(const std::vector<Keyframe> &keyframes, Geni::Skeleto
 
     writer.release();
     DestroyFBO();
+
+    // Restore the default viewport so the main window keeps rendering full-size.
+    // Without this the next Engine::Run frame inherits our FBO-sized viewport and
+    // the 3D scene collapses into a small corner behind the sidebar.
+    glm::ivec2 fb = Geni::Engine::GetInstance().GetFramebufferSize();
+    glViewport(0, 0, fb.x, fb.y);
 
     return true;
 }

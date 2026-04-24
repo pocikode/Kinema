@@ -23,6 +23,7 @@ struct MarkerBinding
     {
         Position,         // set bone world position; rotation untouched
         PositionRotation, // set bone world position and orientation (ArUco only)
+        LookAt,           // rotate bone toward marker direction; position unchanged
     };
 
     int markerId = -1;
