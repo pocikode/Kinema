@@ -30,11 +30,11 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLFW REQUIRED glfw3)
-pkg_check_modules(GLEW REQUIRED glew)
+# GLFW
+find_package(glfw3 CONFIG REQUIRED)
 
-include_directories(${GLEW_INCLUDE_DIRS} ${GLFW_INCLUDE_DIRS})
+# GLEW
+find_package(GLEW REQUIRED)
 
 set(SRC_FILES
     src/main.cpp
@@ -67,8 +67,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME}
     GeniEngine
-    ${GLFW_LIBRARIES}
-    ${GLEW_LIBRARIES}
+    glfw
+    GLEW::GLEW
     ${OpenCV_LIBS}
 )
 

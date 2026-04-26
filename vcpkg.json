@@ -1,0 +1,17 @@
+{
+  "name": "kinema",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "glfw3",
+    "glew",
+    {
+      "name": "opencv4",
+      "features": [
+        "ffmpeg",
+        "png",
+        "jpeg",
+        "quirc"
+      ]
+    }
+  ]
+}
