@@ -1,6 +1,6 @@
 # Kinema — User Guide
 
-Kinema tracks colored marker stickers or ArUco fiducial tags via webcam, drives a rigged 3D skeleton in real-time, records the motion, and lets you export results as JSON or video.
+Kinema tracks colored marker stickers or ArUco fiducial tags via webcam, drives a rigged 3D skeleton in real-time, records the motion, and lets you export results as JSON, video (MP4/AVI), or a GLB that bundles the animation back onto the source rig.
 
 ---
 
@@ -22,12 +22,15 @@ Kinema tracks colored marker stickers or ArUco fiducial tags via webcam, drives 
 ./build/kinema
 ```
 
+On first launch, Kinema auto-loads the bundled Mixamo low-poly rig and seeds three default marker slots (head + both hands) so you can start experimenting immediately.
+
 The window opens with:
-- **3D viewport** — grid, coordinate axes, and the loaded rigged model (once loaded)
-- **Left sidebar** — five collapsible panels: Model, Detector, Markers, Recording, Export
+- **3D viewport** — grid, coordinate axes, and the loaded rigged model (centered on the origin)
+- **Left sidebar** — five collapsible sections: Model, Detector, Markers, Recording, Export
 - **Bottom-right** — live camera feed with per-marker overlay circles
 - **Top-right** — XYZ orientation gizmo (rotates with camera)
 - **Bottom bar** — FPS, recording state, marker detection status
+- **Top menu bar** — File → Save JSON / Export Video shortcuts
 
 ---
 
@@ -57,14 +60,14 @@ The window opens with:
 
 ### 1. Load a Rigged Model
 
-In the **Model** panel:
+In the **Model** section:
 
-1. Enter the path to a GLB/glTF file with a skeleton (e.g. `models/mixamo_lowpoly/mixamo-animated-lowpoly.glb`)
-2. Click **Load Model**
+1. The path field defaults to `models/mixamo_lowpoly/mixamo-animated-lowpoly.glb`. Replace it with any GLB/glTF rig path (absolute or relative to the `assets/` folder) if you want a different character.
+2. Click **Load Model**. Use **Reset** to return the rig to its bind pose / origin.
 
-Once loaded, the panel shows the model path and the total number of detected bones. The bone list becomes available for binding in the Markers panel.
+Once loaded, the section shows the resolved path and the total number of bones. The bone list becomes available in the Markers section's Bone dropdowns.
 
-> If you skip this step, marker detection still works but no skeleton is driven.
+> The default rig auto-loads on startup, so you can skip straight to the Detector section the first time.
 
 ---
 
@@ -119,20 +122,21 @@ In the **Markers** panel, click **+ Add marker** for each physical marker you wa
 
 | Field | Description |
 |-------|-------------|
-| Name | Label shown in camera feed overlay |
-| Color | Overlay circle color in camera feed |
+| Name | Label shown next to the marker's circle in the camera feed overlay |
+| Color | Overlay circle color in the camera feed |
 | Binding | How the marker drives the skeleton (see below) |
-| Bone | Target bone (dropdown populated after model load) |
+| Bone | Target bone — a dropdown populated from the loaded rig |
 
 **Binding modes:**
 
 | Mode | Description |
 |------|-------------|
 | Position | Moves the bone to the unprojected marker position; rotation unchanged |
-| Position + Rotation | Moves and rotates the bone (ArUco only — requires orientation data) |
-| IK Target (2-bone) | Marker is the end-effector; two-bone analytical IK poses root → mid → end chain |
+| Position + Rotation | Moves and rotates the bone (ArUco only — HSV has no orientation data) |
+| IK Target (2-bone) | Marker is the end-effector; analytical 2-bone IK bends root → mid → end toward the marker |
+| Look At (rotation only) | Bone rotates to face the marker; position is never written (avoids neck/spine stretching) |
 
-For **IK Target**, three bones must be selected: **IK Root** (e.g. shoulder), **IK Mid** (e.g. elbow), **End** (e.g. hand).
+For **IK Target**, three bones must be selected: **IK Root** (e.g. shoulder), **IK Mid** (e.g. elbow), **End** (e.g. hand). The defaults seed `mixamorig:LeftArm / LeftForeArm / LeftHand` (and the right-side equivalents) for Mixamo rigs.
 
 When a marker is detected, its slot shows a green **detected** indicator. The camera feed shows a colored overlay circle at the marker's position.
 
@@ -168,35 +172,45 @@ The panel shows elapsed time and keyframe count in real time.
 
 ### 6. Reconstruct & Preview
 
-After stopping, click **RECONSTRUCT 3D** to replay the recorded motion on the skeleton in the 3D viewport.
+After stopping, click **RECONSTRUCT 3D** to replay the recorded motion on the skeleton in the 3D viewport. The recording plays once; press the button again to replay.
 
 ---
 
 ### 7. Export Results
 
-In the **Export** panel:
+In the **Export** section:
 
 | Field | Description |
 |-------|-------------|
-| Output Format | MP4 (recommended) or AVI |
+| Output Format | MP4 (recommended) or AVI — only affects the video export |
 | FPS | Frames per second for the exported video (1–60) |
-| Output Path | File name without extension (e.g. `output`, `my_recording`) |
+| Directory | Destination folder. Defaults to `$HOME`. **Browse…** opens a native folder picker. |
+| Filename (no extension) | Base name. Defaults to `kinema_YYYYMMDD`. The appropriate extension is added per format. |
 
-Then:
-- **SAVE JSON** — writes `<path>.json` with all keyframes (position + rotation + timestamp)
-- **EXPORT VIDEO** — renders each keyframe and writes `<path>.mp4` or `<path>.avi`
+Then, using the buttons inside the Export section:
+- **SAVE JSON** — writes `<dir>/<name>.json` with a per-bone local-space keyframe timeline (schema v2).
+- **EXPORT VIDEO** — renders each keyframe to an offscreen framebuffer and writes `<dir>/<name>.mp4` or `.avi`.
+- **EXPORT GLB** — takes the source GLB you loaded and appends a new animation named `Recorded` built from your keyframes, writing `<dir>/<name>.glb`. Open the result in any glTF viewer (Blender, [glb.ee](https://glb.ee), Three.js) to verify.
 
-These actions are also accessible via **File → Save JSON** and **File → Export Video** in the menu bar.
+**Save JSON** and **Export Video** are also on the **File** menu. **Export GLB** is only available from the Export section.
 
-**JSON format example:**
+**JSON schema (v2):**
 ```json
 {
+  "version": 2,
   "keyframes": [
-    { "t": 0.000, "px": 0.12, "py": 0.05, "pz": 1.98, "qw": 1, "qx": 0, "qy": 0, "qz": 0 },
-    { "t": 0.033, "px": 0.15, "py": 0.06, "pz": 1.95, "qw": 1, "qx": 0, "qy": 0, "qz": 0 }
+    {
+      "t": 0.033,
+      "bones": {
+        "mixamorig:Hips": {"px":0,"py":1,"pz":0,"qw":1,"qx":0,"qy":0,"qz":0,"sx":1,"sy":1,"sz":1},
+        "mixamorig:LeftHand": {"px":0.12,"py":1.4,"pz":0.05,"qw":0.97,"qx":0.01,"qy":-0.23,"qz":0.02,"sx":1,"sy":1,"sz":1}
+      }
+    }
   ]
 }
 ```
+
+Poses are stored in **local space** (relative to each bone's parent), so the rig root can move without rebaking the animation.
 
 ---
 
@@ -236,6 +250,11 @@ These actions are also accessible via **File → Save JSON** and **File → Expo
 **Export video is empty or won't open**
 - Ensure OpenCV was built with video codec support (`brew install opencv` includes this on macOS)
 - Try AVI format instead of MP4 if MP4 fails
+
+**GLB export fails or the resulting file won't open**
+- The source model must be a **single-buffer GLB**. Multi-buffer glTF-separate (`.gltf` + `.bin`) is not supported.
+- Check stderr — any bones the exporter couldn't resolve against the glTF node list are logged and skipped.
+- Make sure a recording exists (keyframe count > 0 in the Recording section) and a model has been loaded.
 
 ---
 
