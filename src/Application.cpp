@@ -200,6 +200,7 @@ void Application::RebuildDetectorFromState()
         auto hsv = std::make_unique<HSVMarkerDetector>();
         m_detector = std::move(hsv);
     }
+#ifdef KINEMA_ENABLE_ARUCO
     else
     {
         auto aruco = std::make_unique<ArucoMarkerDetector>();
@@ -207,6 +208,7 @@ void Application::RebuildDetectorFromState()
         aruco->SetMarkerLengthMeters(m_uiState.arucoMarkerLengthMeters);
         m_detector = std::move(aruco);
     }
+#endif // KINEMA_ENABLE_ARUCO
     m_detector->Init(0);
 }
 
@@ -284,10 +286,16 @@ void Application::Update(float deltaTime)
     }
     if (m_uiState.resetModelRequested)
     {
-        if (m_riggedObj)
-            m_riggedObj->SetPosition(glm::vec3(0.0f));
         m_playback = false;
         m_playbackTime = 0.0f;
+        if (m_riggedObj && !m_uiState.loadedModelPath.empty())
+        {
+            char savedPath[512];
+            strncpy(savedPath, m_uiState.modelPath, sizeof(savedPath));
+            strncpy(m_uiState.modelPath, m_uiState.loadedModelPath.c_str(), sizeof(m_uiState.modelPath));
+            LoadRigFromState();
+            strncpy(m_uiState.modelPath, savedPath, sizeof(m_uiState.modelPath));
+        }
         m_uiState.resetModelRequested = false;
     }
     if (m_uiState.detectorDirty)

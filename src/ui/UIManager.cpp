@@ -281,12 +281,23 @@ void UIManager::DrawModelSection(UIState &state)
 
 void UIManager::DrawDetectorSection(UIState &state)
 {
+    // Only HSV is exposed in the UI for thesis scope.
+    // ── HOW TO RE-ENABLE ARUCO ──────────────────────────────────────────────
+    // 1. In CMakeLists.txt add:
+    //      target_compile_definitions(kinema PRIVATE KINEMA_ENABLE_ARUCO)
+    //    or pass it on the cmake command line:
+    //      cmake -B build -DCMAKE_CXX_FLAGS="-DKINEMA_ENABLE_ARUCO"
+    // 2. The #ifdef blocks in this function AND in Application::RebuildDetectorFromState
+    //    will both become active, restoring the radio button and the detector branch.
+    // 3. No other code changes are required — ArucoMarkerDetector.cpp/.h are untouched.
+    // ────────────────────────────────────────────────────────────────────────
     int kind = static_cast<int>(state.detectorKind);
     if (ImGui::RadioButton("HSV##det_hsv", &kind, 0))
     {
         state.detectorKind = DetectorKind::HSV;
         state.detectorDirty = true;
     }
+#ifdef KINEMA_ENABLE_ARUCO
     ImGui::SameLine();
     if (ImGui::RadioButton("ArUco##det_aruco", &kind, 1))
     {
@@ -307,6 +318,7 @@ void UIManager::DrawDetectorSection(UIState &state)
             state.detectorDirty = true;
         }
     }
+#endif // KINEMA_ENABLE_ARUCO
     ImGui::Spacing();
 }
 
