@@ -232,7 +232,7 @@ void Application::RebuildBindingsFromState()
             chain.rootBoneName = slot.ikRootBone;
             chain.midBoneName = slot.ikMidBone;
             chain.endBoneName = slot.boneName;
-            chain.poleHint = glm::vec3(0.0f, 0.0f, 1.0f);
+            chain.poleHint = glm::vec3(0.0f, -1.0f, 0.0f);
             chains.push_back(chain);
         }
         else

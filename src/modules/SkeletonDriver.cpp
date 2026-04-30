@@ -215,39 +215,15 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
 
         if (binding.mode == MarkerBinding::Mode::LookAt)
         {
-            // Rotate the bone so it "faces" the direction of the marker from the scene
-            // origin, without ever translating the bone (prevents neck/spine stretching).
+            // Yaw-only rotation: rotate around world Y based on the marker's horizontal
+            // position. This keeps the bone upright and only turns it left/right.
+            // The angle is measured from the +Z axis toward +X in the XZ plane.
             glm::mat4 bindWorld = glm::inverse(skeleton.GetInverseBindMatrix(jointIndex));
-            glm::vec3 boneBindPos = glm::vec3(bindWorld[3]);
             glm::quat boneBindRot = glm::quat_cast(bindWorld);
 
-            // Bind-pose "up" direction: from this bone toward its first skeleton child.
-            glm::vec3 bindDir = glm::vec3(0.0f, 1.0f, 0.0f);
-            for (const auto &child : bone->GetChildren())
-            {
-                int ci = skeleton.FindJoint(child->GetName());
-                if (ci >= 0)
-                {
-                    glm::vec3 childBindPos =
-                        glm::vec3(glm::inverse(skeleton.GetInverseBindMatrix(ci))[3]);
-                    glm::vec3 d = childBindPos - boneBindPos;
-                    if (glm::length(d) > 1e-5f)
-                    {
-                        bindDir = glm::normalize(d);
-                        break;
-                    }
-                }
-            }
-
-            // Desired direction: from the scene origin toward the marker.
-            glm::vec3 toTarget = targetWorld;
-            if (glm::length(toTarget) > 1e-5f)
-                toTarget = glm::normalize(toTarget);
-            else
-                toTarget = bindDir;
-
-            glm::quat delta = RotationBetween(bindDir, toTarget);
-            bone->SetRotation(WorldToLocalRot(bone, delta * boneBindRot));
+            float yaw = std::atan2(targetWorld.x, targetWorld.z);
+            glm::quat yawDelta = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+            bone->SetRotation(WorldToLocalRot(bone, yawDelta * boneBindRot));
         }
         else
         {
@@ -274,6 +250,9 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
 
         PrimeIKChain(chain, skeleton, rootIdx, midIdx, endIdx);
         glm::vec3 target = unproject(*it->second) + chain.worldOffset;
+        // Constrain target to the shoulder's bind-pose Z plane so the arm extends
+        // to the side rather than reaching forward toward the camera.
+        target.z = chain.rootBindWorldPos.z;
         SolveTwoBoneIK(skeleton.GetJointNode(rootIdx), skeleton.GetJointNode(midIdx), chain, target);
     }
 }
