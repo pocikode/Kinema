@@ -1,6 +1,5 @@
 #pragma once
 #include <geni.h>
-#include "modules/ArucoMarkerDetector.h"
 #include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
 #include "modules/MarkerDetection.h"

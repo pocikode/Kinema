@@ -11,9 +11,6 @@
 #include <filesystem>
 #include <string>
 
-// Implemented in UIManager.cpp — maps a UIState::arucoDictIndex to the cv::aruco enum id.
-int UIManager_GetArucoDictId(int index);
-
 namespace
 {
 std::shared_ptr<Geni::Skeleton> FindSkeleton(Geni::GameObject *root)
@@ -73,9 +70,7 @@ bool Application::Init()
     auto leftHand = MakeSlot("hand_L", green, "mixamorig:LeftHand", BindingKind::IKTarget, "mixamorig:LeftArm",
                              "mixamorig:LeftForeArm");
     auto rightHand = MakeSlot("hand_R", blue, "mixamorig:RightHand", BindingKind::IKTarget, "mixamorig:RightArm",
-                              "mixamorig:RightForeArm");
-    leftHand.arucoTagId = 1;
-    rightHand.arucoTagId = 2;
+                               "mixamorig:RightForeArm");
 
     // Narrow default HSV bands so ambient color noise in the webcam doesn't register
     // as a marker. Users can widen from the UI once their real markers are in frame.
@@ -87,7 +82,6 @@ bool Application::Init()
 
     m_uiState.markers = {head, leftHand, rightHand};
     m_uiState.markersDirty = true;
-    m_uiState.detectorDirty = true;
     m_uiState.loadModelRequested = true;
 
     // Default export filename: kinema_YYYYMMDD — user can overwrite from the UI.
@@ -108,6 +102,7 @@ bool Application::Init()
     }
 
     SetupScene();
+    RebuildDetectorFromState();
     m_uiManager.Init(Geni::Engine::GetInstance().GetWindow());
     return true;
 }
@@ -191,24 +186,11 @@ void Application::LoadRigFromState()
 
 void Application::RebuildDetectorFromState()
 {
-    // Preserve camera access across detector swaps: destroy old, then open new.
     if (m_detector)
         m_detector->Destroy();
 
-    if (m_uiState.detectorKind == DetectorKind::HSV)
-    {
-        auto hsv = std::make_unique<HSVMarkerDetector>();
-        m_detector = std::move(hsv);
-    }
-#ifdef KINEMA_ENABLE_ARUCO
-    else
-    {
-        auto aruco = std::make_unique<ArucoMarkerDetector>();
-        aruco->SetDictionary(UIManager_GetArucoDictId(m_uiState.arucoDictIndex));
-        aruco->SetMarkerLengthMeters(m_uiState.arucoMarkerLengthMeters);
-        m_detector = std::move(aruco);
-    }
-#endif // KINEMA_ENABLE_ARUCO
+    auto hsv = std::make_unique<HSVMarkerDetector>();
+    m_detector = std::move(hsv);
     m_detector->Init(0);
 }
 
@@ -220,8 +202,7 @@ void Application::RebuildBindingsFromState()
     for (size_t i = 0; i < m_uiState.markers.size(); ++i)
     {
         const auto &slot = m_uiState.markers[i];
-        int observationId =
-            (m_uiState.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : slot.arucoTagId;
+        int observationId = static_cast<int>(i);
 
         if (slot.binding == BindingKind::IKTarget)
         {
@@ -242,9 +223,8 @@ void Application::RebuildBindingsFromState()
             MarkerBinding b;
             b.markerId = observationId;
             b.boneName = slot.boneName;
-            b.mode = (slot.binding == BindingKind::PositionRotation) ? MarkerBinding::Mode::PositionRotation
-                   : (slot.binding == BindingKind::LookAt)          ? MarkerBinding::Mode::LookAt
-                                                                     : MarkerBinding::Mode::Position;
+            b.mode = (slot.binding == BindingKind::LookAt) ? MarkerBinding::Mode::LookAt
+                                                           : MarkerBinding::Mode::Position;
             bindings.push_back(b);
         }
     }
@@ -297,11 +277,6 @@ void Application::Update(float deltaTime)
             strncpy(m_uiState.modelPath, savedPath, sizeof(m_uiState.modelPath));
         }
         m_uiState.resetModelRequested = false;
-    }
-    if (m_uiState.detectorDirty)
-    {
-        RebuildDetectorFromState();
-        m_uiState.detectorDirty = false;
     }
     if (m_uiState.markersDirty)
     {

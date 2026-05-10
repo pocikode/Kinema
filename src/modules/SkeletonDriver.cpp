@@ -36,8 +36,7 @@ glm::quat WorldToLocalRot(Geni::GameObject *bone, const glm::quat &desiredWorldR
     return glm::inverse(parentWorldRot) * desiredWorldRot;
 }
 
-// Index observations by id so repeat lookups are O(1). If multiple observations
-// share an id (shouldn't happen for ArUco; could for misconfigured HSV), last wins.
+// Index observations by id so repeat lookups are O(1).
 std::unordered_map<int, const MarkerObservation *> IndexById(const std::vector<MarkerObservation> &obs)
 {
     std::unordered_map<int, const MarkerObservation *> map;
@@ -228,11 +227,6 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
         else
         {
             bone->SetPosition(WorldToLocalPos(bone, targetWorld));
-
-            if (binding.mode == MarkerBinding::Mode::PositionRotation && it->second->hasOrientation)
-            {
-                bone->SetRotation(WorldToLocalRot(bone, it->second->orientation));
-            }
         }
     }
 

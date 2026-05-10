@@ -13,17 +13,15 @@ namespace Geni
 class Skeleton;
 }
 
-// Mapping from a marker observation to a bone. Phase 4 supports Position (drag the
-// bone to the unprojected marker pos) and PositionRotation (also apply orientation,
-// useful for ArUco tags that provide pose). IK-driven limb posing is planned via
-// separate `IKChain` entries — see `SkeletonDriver::SetIKChains`.
+// Mapping from a marker observation to a bone. Supports Position (drag the
+// bone to the unprojected marker pos) and LookAt (rotate bone toward marker).
+// IK-driven limb posing is handled via separate `IKChain` entries.
 struct MarkerBinding
 {
     enum class Mode
     {
-        Position,         // set bone world position; rotation untouched
-        PositionRotation, // set bone world position and orientation (ArUco only)
-        LookAt,           // rotate bone toward marker direction; position unchanged
+        Position, // set bone world position; rotation untouched
+        LookAt,   // rotate bone toward marker direction; position unchanged
     };
 
     int markerId = -1;

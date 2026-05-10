@@ -1,16 +1,15 @@
 # Kinema — User Guide
 
-Kinema tracks colored marker stickers or ArUco fiducial tags via webcam, drives a rigged 3D skeleton in real-time, records the motion, and lets you export results as JSON, video (MP4/AVI), or a GLB that bundles the animation back onto the source rig.
+Kinema tracks colored markers via webcam, drives a rigged 3D skeleton in real-time, records the motion, and lets you export results as JSON, video (MP4/AVI), or a GLB that bundles the animation back onto the source rig.
 
 ---
 
 ## Requirements
 
 - A webcam connected to your computer
-- **HSV mode** — a bright, solid-colored physical marker (sticker, tape, or painted dot)
+- A bright, solid-colored physical marker (sticker, tape, or painted dot)
   - Best colors: **orange, green, yellow, or red**
   - Avoid: white, black, grey, skin tones (too little saturation)
-- **ArUco mode** — printed ArUco fiducial tags (any dictionary; 5 cm default)
 - A rigged GLB/glTF model with a compatible skeleton (Mixamo models work out of the box)
 - macOS with GLFW, GLEW, and OpenCV installed
 
@@ -71,21 +70,9 @@ Once loaded, the section shows the resolved path and the total number of bones. 
 
 ---
 
-### 2. Choose a Detector
+### 2. Tune HSV Ranges
 
-In the **Detector** panel, select either:
-
-| Mode | Best for | Notes |
-|------|----------|-------|
-| **HSV** | Colored stickers/tape | Fast; no orientation |
-| **ArUco** | Printed fiducial tags | Provides 6-DOF pose (position + rotation) |
-
-**ArUco-specific settings:**
-
-| Setting | Description |
-|---------|-------------|
-| Dictionary | Tag family printed on your tags (e.g. `DICT_4X4_50`) |
-| Marker (m) | Physical side length of the printed tag in meters (default 0.05 m = 5 cm) |
+Kinema uses HSV color tracking. In the **Detector** panel, you can see the current tracking mode. Configure the per-marker HSV ranges in the **Markers** panel below.
 
 ---
 
@@ -93,7 +80,7 @@ In the **Detector** panel, select either:
 
 In the **Markers** panel, click **+ Add marker** for each physical marker you want to track. Each slot has:
 
-**Identification (HSV mode)**
+**HSV Range**
 
 | Slider | What it does |
 |--------|-------------|
@@ -112,12 +99,6 @@ In the **Markers** panel, click **+ Add marker** for each physical marker you wa
 | Blue   | 90     | 130     |
 | Purple | 130    | 160     |
 
-**Identification (ArUco mode)**
-
-| Field | Description |
-|-------|-------------|
-| Tag id | Numeric ID printed on the ArUco tag |
-
 **Bone binding**
 
 | Field | Description |
@@ -132,7 +113,6 @@ In the **Markers** panel, click **+ Add marker** for each physical marker you wa
 | Mode | Description |
 |------|-------------|
 | Position | Moves the bone to the unprojected marker position; rotation unchanged |
-| Position + Rotation | Moves and rotates the bone (ArUco only — HSV has no orientation data) |
 | IK Target (2-bone) | Marker is the end-effector; analytical 2-bone IK bends root → mid → end toward the marker |
 | Look At (rotation only) | Bone rotates to face the marker; position is never written (avoids neck/spine stretching) |
 
@@ -222,11 +202,6 @@ Poses are stored in **local space** (relative to each bone's parent), so the rig
 - Increase lighting — poor light reduces saturation
 - Raise V min if the room is bright, lower it if dim
 
-**ArUco marker not detected**
-- Ensure the printed tag matches the selected dictionary
-- Check the **Marker (m)** field matches your printed tag's physical size
-- Avoid glare and motion blur — ArUco decoding needs clear corners
-
 **Bone dropdown is empty**
 - Load a model first via the **Model** panel; bones are unavailable until a model is loaded
 
@@ -279,5 +254,3 @@ Default calibration constants (in `Application.cpp`):
 - `depthRefArea = 10000` px²
 
 For best accuracy, hold your marker at exactly 2 meters from the camera, note its pixel area from the **Markers** panel, and update `depthRefArea` to that value before recompiling.
-
-ArUco mode uses `solvePnP` with the marker's known physical size, giving more accurate depth without manual calibration.

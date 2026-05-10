@@ -1,14 +1,12 @@
 # Kinema
 
-**Kinema** is a real-time motion capture and 3D skeleton driving application. It tracks physical markers (colored stickers or ArUco tags) via a webcam and maps that motion onto a rigged 3D model in real-time.
+**Kinema** is a real-time motion capture and 3D skeleton driving application. It tracks colored markers via a webcam and maps that motion onto a rigged 3D model in real-time.
 
 ![Kinema Interface](assets/preview.png) *(Placeholder for your preview image)*
 
 ## Key Features
 
-- **Dual Tracking Modes**:
-  - **HSV Mode**: Tracks bright, solid-colored markers (orange, green, yellow, red).
-  - **ArUco Mode**: High-precision tracking using printed fiducial tags (provides 6-DOF pose).
+- **HSV Color Tracking**: Tracks bright, solid-colored markers (orange, green, yellow, red).
 - **Real-time Skeleton Driving**: Map tracked points to specific bones (Position, Rotation, IK Target, or Look At).
 - **Built-in IK Solver**: 2-bone analytical IK for arms and legs.
 - **Recording & Playback**: Record motion sequences and preview them immediately on the 3D rig.
@@ -70,7 +68,7 @@ We recommend using **vcpkg** for dependency management.
 ## Usage
 
 1.  **Load a Model**: Use the **Model** panel to load a rigged GLB (Mixamo rigs work best).
-2.  **Set up Detector**: Choose between **HSV** (stickers) or **ArUco** (printed tags).
+2.  **Configure HSV Ranges**: Create marker slots, tune the Hue/Saturation/Value ranges, and bind them to specific bones or IK targets.
 3.  **Add Markers**: Create marker slots and bind them to specific bones or IK targets.
 4.  **Record**: Hit **Start Recording**, perform your motion, and then **Reconstruct 3D** to preview.
 5.  **Export**: Save your animation as a GLB or JSON for use in Blender, Unity, or web apps.

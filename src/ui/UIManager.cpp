@@ -5,7 +5,6 @@
 #include <GLFW/glfw3.h>
 #include <glm/mat3x3.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/objdetect/aruco_dictionary.hpp>
 #include <portable-file-dialogs.h>
 
 #include <cstring>
@@ -20,12 +19,7 @@ constexpr float kSidebarW = 320.0f;
 constexpr float kMenuBarH = 20.0f;
 constexpr float kStatusBarH = 24.0f;
 
-const char *const kArucoDicts[] = {"DICT_4X4_50", "DICT_4X4_100", "DICT_5X5_50", "DICT_5X5_100", "DICT_6X6_250"};
-const int kArucoDictIds[] = {cv::aruco::DICT_4X4_50, cv::aruco::DICT_4X4_100, cv::aruco::DICT_5X5_50,
-                             cv::aruco::DICT_5X5_100, cv::aruco::DICT_6X6_250};
-constexpr int kArucoDictCount = static_cast<int>(sizeof(kArucoDicts) / sizeof(kArucoDicts[0]));
-
-const char *const kBindingLabels[] = {"Position", "Position + Rotation", "IK Target (2-bone)", "Look At (rotation only)"};
+const char *const kBindingLabels[] = {"Position", "IK Target (2-bone)", "Look At (rotation only)"};
 
 // Tokyo Night palette — https://github.com/enkia/tokyo-night-vscode-theme
 void ApplyTokyoNightTheme()
@@ -133,13 +127,6 @@ bool BoneCombo(const char *label, char *buffer, size_t bufferSize, const std::ve
     return changed;
 }
 } // namespace
-
-int UIManager_GetArucoDictId(int index)
-{
-    if (index < 0 || index >= kArucoDictCount)
-        return kArucoDictIds[0];
-    return kArucoDictIds[index];
-}
 
 bool UIManager::Init(GLFWwindow *window)
 {
@@ -281,44 +268,7 @@ void UIManager::DrawModelSection(UIState &state)
 
 void UIManager::DrawDetectorSection(UIState &state)
 {
-    // Only HSV is exposed in the UI for thesis scope.
-    // ── HOW TO RE-ENABLE ARUCO ──────────────────────────────────────────────
-    // 1. In CMakeLists.txt add:
-    //      target_compile_definitions(kinema PRIVATE KINEMA_ENABLE_ARUCO)
-    //    or pass it on the cmake command line:
-    //      cmake -B build -DCMAKE_CXX_FLAGS="-DKINEMA_ENABLE_ARUCO"
-    // 2. The #ifdef blocks in this function AND in Application::RebuildDetectorFromState
-    //    will both become active, restoring the radio button and the detector branch.
-    // 3. No other code changes are required — ArucoMarkerDetector.cpp/.h are untouched.
-    // ────────────────────────────────────────────────────────────────────────
-    int kind = static_cast<int>(state.detectorKind);
-    if (ImGui::RadioButton("HSV##det_hsv", &kind, 0))
-    {
-        state.detectorKind = DetectorKind::HSV;
-        state.detectorDirty = true;
-    }
-#ifdef KINEMA_ENABLE_ARUCO
-    ImGui::SameLine();
-    if (ImGui::RadioButton("ArUco##det_aruco", &kind, 1))
-    {
-        state.detectorKind = DetectorKind::ArUco;
-        state.detectorDirty = true;
-    }
-
-    if (state.detectorKind == DetectorKind::ArUco)
-    {
-        if (ImGui::Combo("Dictionary##aruco_dict", &state.arucoDictIndex, kArucoDicts, kArucoDictCount))
-        {
-            state.detectorDirty = true;
-        }
-        if (ImGui::InputFloat("Marker (m)##aruco_len", &state.arucoMarkerLengthMeters, 0.005f, 0.01f, "%.3f"))
-        {
-            if (state.arucoMarkerLengthMeters < 0.005f)
-                state.arucoMarkerLengthMeters = 0.005f;
-            state.detectorDirty = true;
-        }
-    }
-#endif // KINEMA_ENABLE_ARUCO
+    ImGui::Text("HSV Color Tracking");
     ImGui::Spacing();
 }
 
@@ -328,7 +278,6 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
     {
         MarkerSlot slot;
         std::snprintf(slot.name, sizeof(slot.name), "marker_%d", static_cast<int>(state.markers.size()));
-        slot.arucoTagId = static_cast<int>(state.markers.size());
         state.markers.push_back(slot);
         state.markersDirty = true;
     }
@@ -353,7 +302,7 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
                                   ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
                 state.markersDirty = true;
 
-            int observationId = (state.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : slot.arucoTagId;
+            int observationId = static_cast<int>(i);
             bool matched = false;
             for (const auto &o : observations)
                 if (o.id == observationId)
@@ -365,24 +314,16 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             ImGui::TextColored(matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
                                matched ? "detected" : "—");
 
-            if (state.detectorKind == DetectorKind::HSV)
-            {
-                ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
-                bool changed = false;
-                changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
-                changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
-                changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
-                changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
-                changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
-                changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
-                if (changed)
-                    state.markersDirty = true;
-            }
-            else
-            {
-                if (ImGui::InputInt("Tag id##aruco_id", &slot.arucoTagId))
-                    state.markersDirty = true;
-            }
+            ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
+            bool changed = false;
+            changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
+            changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
+            changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
+            changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
+            changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
+            changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
+            if (changed)
+                state.markersDirty = true;
 
             int bindingIdx = static_cast<int>(slot.binding);
             if (ImGui::Combo("Binding##binding", &bindingIdx, kBindingLabels,
@@ -512,8 +453,7 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
             const MarkerSlot *slot = nullptr;
             for (size_t i = 0; i < state.markers.size(); ++i)
             {
-                int id = (state.detectorKind == DetectorKind::HSV) ? static_cast<int>(i) : state.markers[i].arucoTagId;
-                if (id == obs.id)
+                if (static_cast<int>(i) == obs.id)
                 {
                     slot = &state.markers[i];
                     break;

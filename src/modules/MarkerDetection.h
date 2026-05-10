@@ -7,10 +7,7 @@
 #include <vector>
 
 // Single sighting of a marker in the most recent camera frame.
-// `id` disambiguates observations when multiple markers are tracked:
-//   - HSV detector: `id` is the index of the configured HSVRange that produced the blob
-//   - ArUco detector: `id` is the unique tag id decoded from the fiducial
-// Orientation is only populated by detectors that can recover it (ArUco does; HSV cannot).
+// `id` is the slot index of the configured HSVRange that produced the blob.
 struct MarkerObservation
 {
     int id = -1;

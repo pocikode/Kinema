@@ -10,29 +10,21 @@
 #include <string>
 #include <vector>
 
-enum class DetectorKind
-{
-    HSV,
-    ArUco,
-};
-
 // How a marker slot drives its bound bone.
 enum class BindingKind
 {
     Position,         // bone.worldPos = unproject(marker)
-    PositionRotation, // bone.worldPos + bone.worldRot (ArUco only)
     IKTarget,         // marker is end-effector; ikRoot + ikMid posed via analytical 2-bone IK
     LookAt,           // bone rotates toward marker; position is never changed (no neck stretch)
 };
 
-// One user-configured marker. For HSV, matches by slot index. For ArUco, matches by tag id.
+// One user-configured marker. Matches by slot index.
 struct MarkerSlot
 {
     char name[32] = "marker";
     float overlayColor[4] = {0.2f, 1.0f, 0.4f, 1.0f};
 
     HSVRange hsv;
-    int arucoTagId = 0;
 
     BindingKind binding = BindingKind::Position;
     char boneName[64] = "";   // target bone (end-effector when IKTarget)
@@ -42,12 +34,6 @@ struct MarkerSlot
 
 struct UIState
 {
-    // Detector configuration
-    DetectorKind detectorKind = DetectorKind::HSV;
-    int arucoDictIndex = 0;                // index into kArucoDicts (defined in UIManager.cpp)
-    float arucoMarkerLengthMeters = 0.05f; // 5 cm default
-    bool detectorDirty = false;            // set when detector kind / aruco params change
-
     // Marker slots
     std::vector<MarkerSlot> markers;
     bool markersDirty = false; // set when any slot config changes (bindings, HSV ranges, etc.)
