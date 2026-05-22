@@ -1,0 +1,79 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          brew install opencv glfw glew
+
+      - name: Configure
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Package DMG
+        run: |
+          mkdir -p package
+          cpack --config build/CPackConfig.cmake -B package
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kinema-macOS
+          path: package/*.dmg
+
+  build-windows:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies via vcpkg
+        run: |
+          C:\vcpkg\vcpkg.exe install --triplet x64-windows
+        shell: cmd
+
+      - name: Configure
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+        shell: cmd
+
+      - name: Install NSIS
+        run: choco install nsis -y
+        shell: cmd
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel %NUMBER_OF_PROCESSORS%
+        shell: cmd
+
+      - name: Package EXE
+        run: |
+          if not exist package mkdir package
+          cpack --config build\CPackConfig.cmake -B package
+        shell: cmd
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kinema-Windows
+          path: package/*.exe

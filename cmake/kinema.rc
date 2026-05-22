@@ -1,0 +1,4 @@
+// kinema.rc — Windows resource file for Kinema
+// Embeds the application icon into the executable.
+
+IDI_ICON1 ICON "../../assets/icon.ico"

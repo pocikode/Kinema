@@ -1,6 +1,7 @@
 **/.DS_Store
 /.cache
 /build
+/package
 imgui.ini
 output.json
 output.mp4
