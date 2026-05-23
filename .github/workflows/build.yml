@@ -2,19 +2,26 @@ name: Build and Package
 
 on:
   push:
-    branches: [main, master]
   pull_request:
     branches: [main, master]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build-macos:
     runs-on: macos-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/.*project(kinema VERSION \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)).*/\1/p' CMakeLists.txt)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Install dependencies
         run: |
@@ -33,19 +40,36 @@ jobs:
           mkdir -p package
           cpack --config build/CPackConfig.cmake -B package
 
+      - name: Rename DMG with version
+        run: |
+          SOURCE=$(ls package/*.dmg | head -n 1)
+          TARGET="package/Kinema-${{ steps.version.outputs.version }}.dmg"
+          if [ "$SOURCE" != "$TARGET" ]; then
+            mv "$SOURCE" "$TARGET"
+          fi
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Kinema-macOS
-          path: package/*.dmg
+          name: Kinema-macOS-${{ steps.version.outputs.version }}
+          path: package/Kinema-${{ steps.version.outputs.version }}.dmg
 
   build-windows:
     runs-on: windows-2025
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(kinema VERSION ([\d\.]+)\)').Matches.Groups[1].Value
+          echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Install dependencies via vcpkg
         run: |
@@ -72,8 +96,54 @@ jobs:
           cpack --config build\CPackConfig.cmake -B package
         shell: cmd
 
+      - name: Rename EXE with version
+        shell: pwsh
+        run: |
+          $file = Get-ChildItem package\*.exe | Select-Object -First 1
+          $target = "package\Kinema-${{ steps.version.outputs.version }}.exe"
+          if ($file.Name -ne (Split-Path $target -Leaf)) {
+            Rename-Item $file.FullName $target
+          }
+
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Kinema-Windows
-          path: package/*.exe
+          name: Kinema-Windows-${{ steps.version.outputs.version }}
+          path: package/Kinema-${{ steps.version.outputs.version }}.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          VERSION=$(sed -n 's/.*project(kinema VERSION \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)).*/\1/p' CMakeLists.txt)
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "name=Kinema v${VERSION} (${SHORT_SHA})" >> $GITHUB_OUTPUT
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: Kinema-macOS-${{ needs.build-macos.outputs.version }}
+          path: artifacts/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: Kinema-Windows-${{ needs.build-windows.outputs.version }}
+          path: artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.name }}
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
