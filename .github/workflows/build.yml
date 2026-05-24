@@ -55,13 +55,11 @@ jobs:
           path: package/Kinema-${{ steps.version.outputs.version }}.dmg
 
   build-windows:
-    runs-on: windows-2025
-    permissions:
-      actions: write
+    runs-on: windows-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     env:
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+      VCPKG_INSTALLED_DIR: ${{ github.workspace }}\vcpkg-installed
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -75,14 +73,18 @@ jobs:
           $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(kinema VERSION ([\d\.]+)\)').Matches.Groups[1].Value
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Install dependencies via vcpkg
-        run: |
-          C:\vcpkg\vcpkg.exe install --triplet x64-windows
-        shell: cmd
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg-installed
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}-x64-windows
+          restore-keys: |
+            vcpkg-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-
 
       - name: Configure
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_INSTALLED_DIR=%VCPKG_INSTALLED_DIR%
         shell: cmd
 
       - name: Install NSIS
