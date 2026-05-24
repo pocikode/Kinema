@@ -56,8 +56,12 @@ jobs:
 
   build-windows:
     runs-on: windows-2025
+    permissions:
+      actions: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+    env:
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -102,7 +106,7 @@ jobs:
           $file = Get-ChildItem package\*.exe | Select-Object -First 1
           $target = "package\Kinema-${{ steps.version.outputs.version }}.exe"
           if ($file.Name -ne (Split-Path $target -Leaf)) {
-            Rename-Item $file.FullName $target
+            Move-Item $file.FullName $target
           }
 
       - name: Upload EXE artifact
