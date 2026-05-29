@@ -1,48 +1,63 @@
-# Kinema — Suggested Commands
+# Suggested Commands (Darwin / macOS)
 
-## Build
+## Build & Run
+
+### macOS
 ```bash
-# Configure (Release)
+brew install opencv glfw glew cmake
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-# Build (parallel)
 cmake --build build --parallel
-
-# Clean rebuild
-rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
+./build/kinema                   # also produces build/Kinema.app
 ```
 
-## Run
-```bash
-./build/kinema
-```
-Assets are auto-copied to `build/assets/` by CMake POST_BUILD.
-
-## Format (clang-format)
-```bash
-# Format a single file
-clang-format -i src/Application.cpp
-
-# Format all source files
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
-```
-Config: `.clang-format` at repo root (120-col limit, 4-space indent, custom brace style).
-
-## Dependencies (macOS)
-```bash
-brew install opencv      # OpenCV 4.7+
-# GLFW and GLEW via pkg-config (brew install glfw glew)
+### Windows (PowerShell, vcpkg)
+```powershell
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+./build/Release/kinema.exe
 ```
 
-## Linting / Static Analysis
-No automated linter configured. Use `clangd` (`.clangd` config at repo root) for IDE-based diagnostics.
-
-## Testing
-No automated test suite. Manual testing per the checklist in CLAUDE.md (window opens, rig loads, orbit camera, detection, recording, export).
-
-## Useful Git / System Commands
+## Clone (w/ Geni submodule)
 ```bash
-git status / git log / git diff
-ls / find / grep
-pkg-config --cflags --libs opencv4   # verify OpenCV linkage
+git clone --recurse-submodules <repo>
+# or after plain clone:
+git submodule update --init --recursive
+```
+
+## Packaging
+```bash
+./package.sh                     # macOS → DMG
+.\package.bat                    # Windows → NSIS exe
+# both wrap: cpack against configured build tree
+```
+
+## Version Bump (cuts release on push)
+Edit `CMakeLists.txt` line `project(kinema VERSION X.Y.Z)`.
+
+## Lint / Test
+**None.** No test target. No lint target. Style enforced via `.clang-format` (clangd handles via `compile_commands.json`).
+
+## Darwin Utilities
+- File listing: `ls -la`, `ls -G` (color on macOS)
+- Find: `find . -name 'pattern'` (BSD find, no `-printf`)
+- Grep: `grep -R --include='*.cpp'` or prefer `rg` (ripgrep)
+- Sed: BSD sed — `sed -i '' 's/x/y/' file` (empty backup arg required)
+- Open file/app: `open path` / `open -a AppName`
+- Clipboard: `pbcopy` / `pbpaste`
+- Process: `ps aux`, `lsof -i :PORT`
+
+## Git (project-relevant)
+```bash
+git status
+git log --oneline -20
+git submodule status
+git submodule update --init --recursive
+```
+
+## RTK (token-optimized proxy)
+Commands auto-rewritten by hook (transparent). Manual:
+```bash
+rtk gain                  # token savings analytics
+rtk gain --history        # command history w/ savings
+rtk proxy <cmd>           # raw exec, no filter (debug)
 ```

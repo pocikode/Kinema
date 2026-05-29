@@ -101,70 +101,50 @@ void PrimeIKChain(IKChain &chain, const Geni::Skeleton &skeleton, int rootIdx, i
     chain.midBindWorldRot = glm::quat_cast(midBind);
 }
 
-// Analytical two-bone IK. Poses `root` (shoulder) and `mid` (elbow) so that the
-// chain root→mid→end reaches `target` with the elbow bending toward `poleHint`.
-// Uses precomputed bind geometry so it's stable across repeated frames.
-void SolveTwoBoneIK(Geni::GameObject *root, Geni::GameObject *mid, const IKChain &chain, const glm::vec3 &target)
+// Segment-driven arm solver. The shoulder joint (`rootPos`) is held fixed; the
+// upper-arm bone is aimed from there toward `upperArmWorld`, and the forearm is
+// aimed from the resolved elbow toward `foreAimWorld` (palm, or lower-arm
+// fallback). Bone lengths from the bind pose are preserved (no stretch), so
+// bending the physical elbow rotates the forearm relative to the upper arm and
+// shows a visible joint bend. `haveUpper`/`haveFore` let either marker drop out
+// (occlusion) while the other still drives its bone; a missing marker leaves
+// that bone at its current pose.
+void SolveArmChain(Geni::GameObject *root, Geni::GameObject *mid, const IKChain &chain,
+                   const glm::vec3 &rootPos, const glm::vec3 &upperArmWorld, bool haveUpper,
+                   const glm::vec3 &foreAimWorld, bool haveFore)
 {
     if (!root || !mid)
         return;
     if (chain.upperLen < 1e-5f || chain.lowerLen < 1e-5f)
         return;
 
-    // Shoulder world position is driven by the parent chain (hips/spine), which
-    // we don't touch — so read the CURRENT root world position, not the bind one.
-    glm::vec3 rootPos(root->GetWorldTransform()[3]);
-    glm::vec3 toTarget = target - rootPos;
-    float targetDist = glm::length(toTarget);
+    // Upper-arm bone: aim from the fixed shoulder toward the upper-arm marker.
+    glm::quat shoulderDelta(1.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec3 upperDirDesired = chain.upperBindDirWorld;
+    if (haveUpper)
+    {
+        glm::vec3 toUpper = upperArmWorld - rootPos;
+        if (glm::length(toUpper) > 1e-5f)
+        {
+            upperDirDesired = glm::normalize(toUpper);
+            shoulderDelta = RotationBetween(chain.upperBindDirWorld, upperDirDesired);
+            glm::quat shoulderWorldRot = shoulderDelta * chain.rootBindWorldRot;
+            root->SetRotation(WorldToLocalRot(root, shoulderWorldRot));
+        }
+    }
 
-    float maxReach = chain.upperLen + chain.lowerLen - 1e-4f;
-    float minReach = std::abs(chain.upperLen - chain.lowerLen) + 1e-4f;
-    float dist = glm::clamp(targetDist, minReach, maxReach);
-    if (dist < 1e-5f)
+    if (!haveFore)
         return;
 
-    glm::vec3 targetDir = toTarget / (targetDist > 1e-5f ? targetDist : 1.0f);
+    // Forearm bone: aim from the resolved elbow toward the palm/forearm marker.
+    // The elbow sits at bind-pose upper-arm length along the upper direction, so
+    // a longer/shorter physical arm doesn't stretch the rig mesh.
+    glm::vec3 elbowPosResolved = rootPos + upperDirDesired * chain.upperLen;
+    glm::vec3 toFore = foreAimWorld - elbowPosResolved;
+    if (glm::length(toFore) < 1e-5f)
+        return;
+    glm::vec3 lowerDirDesired = glm::normalize(toFore);
 
-    float cosRoot = glm::clamp((chain.upperLen * chain.upperLen + dist * dist - chain.lowerLen * chain.lowerLen) /
-                                   (2.0f * chain.upperLen * dist),
-                               -1.0f, 1.0f);
-    float cosMid = glm::clamp(
-        (chain.upperLen * chain.upperLen + chain.lowerLen * chain.lowerLen - dist * dist) /
-            (2.0f * chain.upperLen * chain.lowerLen),
-        -1.0f, 1.0f);
-    float rootAngle = std::acos(cosRoot);
-    float midInteriorAngle = std::acos(cosMid);
-    float elbowBend = glm::pi<float>() - midInteriorAngle;
-
-    // Bend plane normal: perpendicular to the target direction and the pole hint.
-    glm::vec3 poleDir = glm::length(chain.poleHint) > 1e-5f ? glm::normalize(chain.poleHint) : glm::vec3(0, 0, 1);
-    glm::vec3 bendAxis = glm::cross(targetDir, poleDir);
-    if (glm::length(bendAxis) < 1e-4f)
-    {
-        bendAxis = glm::cross(targetDir, glm::vec3(0, 1, 0));
-        if (glm::length(bendAxis) < 1e-4f)
-            bendAxis = glm::cross(targetDir, glm::vec3(1, 0, 0));
-    }
-    bendAxis = glm::normalize(bendAxis);
-
-    // Desired world-space directions for the two bones.
-    glm::quat shoulderTilt = glm::angleAxis(rootAngle, bendAxis);
-    glm::vec3 upperDirDesired = shoulderTilt * targetDir;
-    glm::vec3 elbowPos = rootPos + upperDirDesired * chain.upperLen;
-    glm::vec3 lowerDirDesired = glm::normalize(target - elbowPos);
-    (void)elbowBend; // encoded implicitly via elbowPos/lowerDirDesired
-
-    // Map bind-pose bone directions onto the desired ones. Each bone's new world
-    // rotation is (delta that rotates bind-dir onto desired-dir) * bind-rot; then
-    // convert to the bone's parent-local rotation.
-    glm::quat shoulderDelta = RotationBetween(chain.upperBindDirWorld, upperDirDesired);
-    glm::quat shoulderWorldRot = shoulderDelta * chain.rootBindWorldRot;
-    root->SetRotation(WorldToLocalRot(root, shoulderWorldRot));
-
-    // For the elbow, the bind-pose lower direction was computed relative to the
-    // elbow's bind world rotation; after the shoulder moves, apply the same
-    // shoulderDelta to that bind direction to find where it sits now, then rotate
-    // it onto the desired lower direction.
     glm::vec3 lowerDirAfterShoulder = shoulderDelta * chain.lowerBindDirWorld;
     glm::quat elbowDelta = RotationBetween(lowerDirAfterShoulder, lowerDirDesired);
     glm::quat elbowWorldRot = elbowDelta * shoulderDelta * chain.midBindWorldRot;
@@ -232,8 +212,12 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
 
     for (auto &chain : m_chains)
     {
-        auto it = byId.find(chain.markerId);
-        if (it == byId.end())
+        // Run if any of the chain's markers is visible — each bone can be driven
+        // independently, so an occluded palm shouldn't freeze the upper arm.
+        bool anyVisible = byId.count(chain.markerId) ||
+                          (chain.upperArmMarkerId >= 0 && byId.count(chain.upperArmMarkerId)) ||
+                          (chain.foreArmMarkerId >= 0 && byId.count(chain.foreArmMarkerId));
+        if (!anyVisible)
             continue;
 
         int rootIdx = skeleton.FindJoint(chain.rootBoneName);
@@ -243,10 +227,54 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
             continue;
 
         PrimeIKChain(chain, skeleton, rootIdx, midIdx, endIdx);
-        glm::vec3 target = unproject(*it->second) + chain.worldOffset;
-        // Constrain target to the shoulder's bind-pose Z plane so the arm extends
-        // to the side rather than reaching forward toward the camera.
-        target.z = chain.rootBindWorldPos.z;
-        SolveTwoBoneIK(skeleton.GetJointNode(rootIdx), skeleton.GetJointNode(midIdx), chain, target);
+        Geni::GameObject *rootBone = skeleton.GetJointNode(rootIdx);
+        Geni::GameObject *midBone = skeleton.GetJointNode(midIdx);
+
+        // Shoulder joint stays fixed at its current world position (bind pose /
+        // parent chain). Only the upper-arm and forearm bones rotate.
+        glm::vec3 rootPos = rootBone ? glm::vec3(rootBone->GetWorldTransform()[3]) : chain.rootBindWorldPos;
+
+        // Upper-arm marker: aims the upper-arm bone. Z is pinned to the shoulder
+        // plane so the arm swings sideways rather than reaching toward the camera
+        // on noisy depth-from-area estimates.
+        bool haveUpper = false;
+        glm::vec3 upperArmWorld(0.0f);
+        if (chain.upperArmMarkerId >= 0)
+        {
+            auto uIt = byId.find(chain.upperArmMarkerId);
+            if (uIt != byId.end())
+            {
+                upperArmWorld = unproject(*uIt->second);
+                upperArmWorld.z = rootPos.z;
+                haveUpper = true;
+            }
+        }
+
+        // Forearm aim: prefer the palm marker (end of the chain), fall back to the
+        // lower-arm marker when the palm is occluded. Either one driving the
+        // forearm independently of the upper arm is what makes the elbow bend read.
+        bool haveFore = false;
+        glm::vec3 foreAimWorld(0.0f);
+        {
+            auto pIt = byId.find(chain.markerId);
+            if (pIt != byId.end())
+            {
+                foreAimWorld = unproject(*pIt->second) + chain.worldOffset;
+                haveFore = true;
+            }
+            else if (chain.foreArmMarkerId >= 0)
+            {
+                auto fIt = byId.find(chain.foreArmMarkerId);
+                if (fIt != byId.end())
+                {
+                    foreAimWorld = unproject(*fIt->second);
+                    haveFore = true;
+                }
+            }
+        }
+        if (haveFore)
+            foreAimWorld.z = rootPos.z;
+
+        SolveArmChain(rootBone, midBone, chain, rootPos, upperArmWorld, haveUpper, foreAimWorld, haveFore);
     }
 }

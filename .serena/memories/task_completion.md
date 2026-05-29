@@ -1,24 +1,24 @@
-# Kinema — What to Do When a Task is Completed
+# Task Completion Checklist
+
+No test target. No lint target. So:
 
 ## After Code Changes
-1. **Format**: run `clang-format -i` on all modified `.cpp` / `.h` files
-2. **Build**: `cmake --build build --parallel` — fix any compile errors before considering done
-3. **Manual test**: verify the relevant scenario from the checklist in CLAUDE.md:
-   - Window opens with Tokyo Night theme
-   - Default Mixamo rig loads (bone count > 0)
-   - Orbit camera works
-   - Relevant feature (detection / recording / export) functions correctly
-   - No regressions in other panels
+1. **Build**: `cmake --build build --parallel` — must succeed clean (no new warnings).
+2. **Run**: launch `./build/kinema` (macOS) / `./build/Release/kinema.exe` (Windows) and exercise the changed path. For UI/feature changes: open in actual app, test golden path + edge cases, watch for regressions in other features.
+3. **Format**: code must match `.clang-format`. clangd auto-applies if editor configured.
+4. **Verify success criteria** stated up-front (bug fix → reproducing test passes; feature → manual exercise works).
 
-## No Automated Tests
-There is no test suite. Verification is entirely manual via the running application.
+## Cleanup
+- Remove imports / vars / helpers orphaned by your change.
+- Pre-existing dead code: mention to user, do NOT delete unsolicited.
+- No reformatting of adjacent untouched code.
+- No comments added unless WHY is non-obvious.
 
-## Exports to Verify
-- **JSON**: check file contains `"version": 2` and per-bone pose data
-- **Video**: confirm MP4/AVI written with correct frame count
-- **GLB**: open in a glTF viewer (e.g., Babylon.js sandbox) — new `Recorded` animation should appear
+## Release Cut (if user requests)
+- Bump `project(kinema VERSION X.Y.Z)` in `CMakeLists.txt`.
+- Push → CI publishes `v<version>-<shortsha>` GitHub release w/ macOS DMG + Windows NSIS.
 
-## Common Build Pitfalls
-- `pkg-config --cflags --libs opencv4` must succeed; if not, `brew install opencv`
-- Missing GLFW/GLEW: `brew install glfw glew`
-- Stale build: `rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel`
+## Reporting Back
+- If UI/feature change couldn't be tested in browser/app: say so explicitly. Do NOT claim success based on build alone.
+- Type checking + test suites verify correctness, not feature correctness.
+- End-of-turn summary: 1-2 sentences, what changed + what's next.

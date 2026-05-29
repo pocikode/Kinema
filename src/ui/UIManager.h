@@ -16,6 +16,7 @@ enum class BindingKind
     Position,         // bone.worldPos = unproject(marker)
     IKTarget,         // marker is end-effector; ikRoot + ikMid posed via analytical 2-bone IK
     LookAt,           // bone rotates toward marker; position is never changed (no neck stretch)
+    Hint,             // detected only; not bound to a bone (used as elbow/shoulder reference for an IKTarget slot)
 };
 
 // One user-configured marker. Matches by slot index.
@@ -30,6 +31,13 @@ struct MarkerSlot
     char boneName[64] = "";   // target bone (end-effector when IKTarget)
     char ikRootBone[64] = ""; // IKTarget only
     char ikMidBone[64] = "";  // IKTarget only
+
+    // IKTarget-only: vector indices into UIState.markers picking the upper-arm
+    // (aims the upper-arm bone) and lower-arm (forearm-aim fallback) hint slots.
+    // -1 = unset. Stale indices (after delete) are clamped to -1 in
+    // Application::RebuildBindingsFromState.
+    int upperArmMarkerSlot = -1;
+    int foreArmMarkerSlot = -1;
 };
 
 struct UIState

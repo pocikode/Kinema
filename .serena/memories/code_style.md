@@ -1,32 +1,33 @@
-# Kinema — Code Style & Conventions
+# Code Style & Conventions
 
-## Formatting (enforced via `.clang-format`)
-- **Indent**: 4 spaces, no tabs
-- **Column limit**: 120
-- **Brace style**: Custom Allman-like — braces on their own line for classes, functions, control flow (`BreakBeforeBraces: Custom`, `AfterFunction: true`, `AfterClass: true`, `AfterControlStatement: Always`)
-- **Pointer/reference alignment**: Right (`int* p`, `int& r`)
-- **Access modifier offset**: -2 (dedented from class body)
-- Short functions, enums, if-statements NOT collapsed to single line
-- Trailing comments aligned
+## Formatting
+- `.clang-format` is authoritative — read before reformatting.
+- Indent: 4 spaces (no tabs). `tab_width=4`.
+- Encoding: UTF-8, LF line endings, final newline required (`.editorconfig`).
+- AccessModifierOffset: -2.
+- AlignAfterOpenBracket: BlockIndent.
+- No lint target. No test target.
 
-## Naming Conventions (inferred from codebase)
-- **Classes/Structs**: PascalCase (e.g., `HSVMarkerDetector`, `MarkerObservation`, `UIState`)
-- **Methods/Functions**: PascalCase (e.g., `GetLastFrame()`, `AddSkeletonKeyframe()`)
-- **Member variables**: `m_` prefix + camelCase (e.g., `m_detector`, `m_skeleton`)
-- **Local variables**: camelCase
-- **Constants / enums**: PascalCase enum values (e.g., `DetectorKind::HSV`, `BindingMode::LookAt`)
-- **File pairs**: `ClassName.h` / `ClassName.cpp` matching the class name
+## Naming
+- Classes: `PascalCase` (`Application`, `SkeletonDriver`, `HSVMarkerDetector`).
+- Members: `m_` prefix (`m_detector`, `m_depthRefDist`, `m_depthRefArea`).
+- Methods: `PascalCase` (`Detect`, `Apply`, `BuildUI`, `RebuildBindingsFromState`).
+- Free fns / locals: `camelCase`.
+- Enums / nested types: `PascalCase` (`BindingKind`, `MarkerObservation`, `MarkerSlot`).
 
-## C++ Style
-- C++17 standard
-- No RTTI / exceptions style (engine layer is low-level)
-- Use `override` on virtual method overrides
-- Prefer `const` references for read-only parameters
-- Smart pointers (`std::unique_ptr`) for ownership; raw pointers for non-owning refs
-- No docstrings/comments by default; add only for non-obvious invariants or workarounds
+## Header Style
+- `#pragma once` (not include guards).
+- Forward-declare where possible; Geni via `<geni.h>` umbrella.
+- Public interface in `.h`, impl in `.cpp`.
 
-## Project-Specific Patterns
-- **Dirty flags**: `UIState` uses `*Dirty` bool fields as the UI→Application contract; Application consumes and clears them each `Update()`
-- **Module init/destroy**: modules use `Init()` / `Destroy()` (not constructors/destructors) to match the engine lifecycle
-- **Lazy caching**: `SkeletonDriver` caches bind-pose geometry on first use to avoid drift
-- **Local-space poses**: `MotionRecorder` always records local-space bone transforms for re-parenting safety
+## Conventions (from CLAUDE.md)
+- Touch only what the task requires. No reformatting adjacent code. No "improve" comments. Match existing style even when you'd write it differently.
+- State assumptions before coding. Two interpretations exist → surface, don't pick silently.
+- Changes orphan import/var/helper → remove. Pre-existing dead code → mention, don't delete.
+- Minimum code that solves problem. No speculative abstractions. No error handling for impossible scenarios. No flexibility not asked for.
+- Define success criteria up-front. Bug → write reproducing test, then fix. Multi-step task → brief plan w/ verify step per item.
+
+## Comments
+- Default: no comments. Only when WHY is non-obvious (hidden constraint, subtle invariant, workaround for specific bug).
+- Don't explain WHAT (well-named identifiers do that).
+- Don't reference current task/fix/callers (belongs in PR description; rots fast).

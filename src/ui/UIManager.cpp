@@ -7,10 +7,60 @@
 #include <opencv2/imgproc.hpp>
 #include <portable-file-dialogs.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace
 {
+// OpenCV HSV (H: 0-179, S/V: 0-255) → linear RGB (0-1).
+void OpenCvHsvToRgb(int h, int s, int v, float outRgb[3])
+{
+    float H = ((h % 180 + 180) % 180) * 2.0f / 360.0f; // map to [0,1)
+    float S = std::clamp(s / 255.0f, 0.0f, 1.0f);
+    float V = std::clamp(v / 255.0f, 0.0f, 1.0f);
+    float c = V * S;
+    float Hp = H * 6.0f;
+    float x = c * (1.0f - std::fabs(std::fmod(Hp, 2.0f) - 1.0f));
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    if (Hp < 1.0f)      { r = c; g = x; }
+    else if (Hp < 2.0f) { r = x; g = c; }
+    else if (Hp < 3.0f) { g = c; b = x; }
+    else if (Hp < 4.0f) { g = x; b = c; }
+    else if (Hp < 5.0f) { r = x; b = c; }
+    else                { r = c; b = x; }
+    float m = V - c;
+    outRgb[0] = r + m;
+    outRgb[1] = g + m;
+    outRgb[2] = b + m;
+}
+
+// Linear RGB (0-1) → OpenCV H (0-179). Returns 0 for grayscale.
+int RgbToOpenCvHue(const float rgb[3])
+{
+    float r = rgb[0], g = rgb[1], b = rgb[2];
+    float maxC = std::max({r, g, b});
+    float minC = std::min({r, g, b});
+    float d = maxC - minC;
+    if (d < 1e-5f)
+        return 0;
+    float H = 0.0f;
+    if (maxC == r)      H = std::fmod((g - b) / d + 6.0f, 6.0f);
+    else if (maxC == g) H = (b - r) / d + 2.0f;
+    else                H = (r - g) / d + 4.0f;
+    H *= 60.0f; // degrees 0-360
+    int Hcv = static_cast<int>(H * 0.5f); // 0-179
+    return ((Hcv % 180) + 180) % 180;
+}
+
+// Midpoint of an OpenCV hue band, handling the 179 → 0 wrap.
+int HueCenter(int hMin, int hMax)
+{
+    if (hMin <= hMax)
+        return (hMin + hMax) / 2;
+    int sum = hMin + hMax + 180; // unwrap hMax past 180
+    return (sum / 2) % 180;
+}
 constexpr ImGuiWindowFlags kSidebarFlags = ImGuiWindowFlags_NoMove |
                                            ImGuiWindowFlags_NoResize |
                                            ImGuiWindowFlags_NoCollapse;
@@ -19,7 +69,8 @@ constexpr float kSidebarW = 320.0f;
 constexpr float kMenuBarH = 20.0f;
 constexpr float kStatusBarH = 24.0f;
 
-const char *const kBindingLabels[] = {"Position", "IK Target (2-bone)", "Look At (rotation only)"};
+const char *const kBindingLabels[] = {"Position", "IK Target (2-bone)", "Look At (rotation only)",
+                                      "Hint (detect only)"};
 
 // Tokyo Night palette — https://github.com/enkia/tokyo-night-vscode-theme
 void ApplyTokyoNightTheme()
@@ -96,6 +147,48 @@ void ApplyTokyoNightTheme()
     style.WindowPadding     = ImVec2(10, 10);
     style.FramePadding      = ImVec2(8, 4);
     style.ItemSpacing       = ImVec2(8, 6);
+}
+
+// Helper: combo picking another marker slot by name. `selfIndex` is excluded so
+// a slot can't reference itself. Selection is stored as the picked slot's vector
+// index; -1 means "(none)".
+bool SlotCombo(const char *label, int *current, const std::vector<MarkerSlot> &slots, size_t selfIndex)
+{
+    const char *preview = "(none)";
+    if (*current >= 0 && *current < static_cast<int>(slots.size()))
+        preview = slots[*current].name;
+
+    bool changed = false;
+    if (ImGui::BeginCombo(label, preview))
+    {
+        if (ImGui::Selectable("(none)", *current < 0))
+        {
+            if (*current != -1)
+            {
+                *current = -1;
+                changed = true;
+            }
+        }
+        for (size_t i = 0; i < slots.size(); ++i)
+        {
+            if (i == selfIndex)
+                continue;
+            ImGui::PushID(static_cast<int>(i));
+            bool selected = (*current == static_cast<int>(i));
+            char label2[48];
+            std::snprintf(label2, sizeof(label2), "%zu: %s", i, slots[i].name);
+            if (ImGui::Selectable(label2, selected))
+            {
+                *current = static_cast<int>(i);
+                changed = true;
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
 }
 
 // Helper: combo over available bone names writing into a char[N] field.
@@ -300,7 +393,16 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
                 state.markersDirty = true;
             if (ImGui::ColorEdit3("Color##slot_color", slot.overlayColor,
                                   ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
+            {
+                // Picker drives the HSV detection band: derive H from the
+                // chosen RGB and re-center the slot's H window around it.
+                // S/V stay user-controlled via their own sliders.
+                int H = RgbToOpenCvHue(slot.overlayColor);
+                const int halfBand = 7;
+                slot.hsv.hMin = ((H - halfBand) % 180 + 180) % 180;
+                slot.hsv.hMax = (H + halfBand) % 180;
                 state.markersDirty = true;
+            }
 
             int observationId = static_cast<int>(i);
             bool matched = false;
@@ -323,7 +425,16 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
             changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
             if (changed)
+            {
+                // Keep the overlay swatch visually honest: reflect the band's
+                // center hue + center saturation/value so the picker always
+                // shows what the detector is looking for.
+                int hc = HueCenter(slot.hsv.hMin, slot.hsv.hMax);
+                int sc = (slot.hsv.sMin + slot.hsv.sMax) / 2;
+                int vc = (slot.hsv.vMin + slot.hsv.vMax) / 2;
+                OpenCvHsvToRgb(hc, sc, vc, slot.overlayColor);
                 state.markersDirty = true;
+            }
 
             int bindingIdx = static_cast<int>(slot.binding);
             if (ImGui::Combo("Binding##binding", &bindingIdx, kBindingLabels,
@@ -341,6 +452,14 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
                     state.markersDirty = true;
                 if (BoneCombo("End##ik_end", slot.boneName, sizeof(slot.boneName), state.availableBones))
                     state.markersDirty = true;
+                if (SlotCombo("Upper-arm marker##upperarm_slot", &slot.upperArmMarkerSlot, state.markers, i))
+                    state.markersDirty = true;
+                if (SlotCombo("Lower-arm marker##lowerarm_slot", &slot.foreArmMarkerSlot, state.markers, i))
+                    state.markersDirty = true;
+            }
+            else if (slot.binding == BindingKind::Hint)
+            {
+                ImGui::TextDisabled("(detected only — reference by an IK Target slot)");
             }
             else
             {

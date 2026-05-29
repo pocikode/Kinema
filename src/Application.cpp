@@ -61,26 +61,49 @@ MarkerSlot MakeSlot(const char *name, const float color[3], const char *bone,
 
 bool Application::Init()
 {
-    // Defaults: three markers (head + both hands) targeting Mixamo bones.
-    const float red[3] = {1.0f, 0.35f, 0.35f};
-    const float green[3] = {0.35f, 1.0f, 0.4f};
-    const float blue[3] = {0.4f, 0.6f, 1.0f};
+    // Defaults: 7 markers — head + upper-arm/lower-arm/palm for each arm. The
+    // shoulder is never moved: the palm slot is the IK end-effector (forearm aim),
+    // the upper-arm slot aims the upper-arm bone, and the lower-arm slot is a
+    // forearm-aim fallback when the palm is occluded. Upper-arm + lower-arm slots
+    // are Hint-only (detected, referenced by the matching palm chain). Palette
+    // gives each arm three hues far apart on the hue circle to reduce same-arm
+    // mis-attribution.
+    const float orange[3]  = {1.00f, 0.60f, 0.20f};
+    const float blue[3]    = {0.35f, 0.50f, 1.00f};
+    const float green[3]   = {0.30f, 1.00f, 0.40f};
+    const float red[3]     = {1.00f, 0.30f, 0.30f};
+    const float cyan[3]    = {0.30f, 0.85f, 1.00f};
+    const float magenta[3] = {1.00f, 0.40f, 0.95f};
+    const float yellow[3]  = {1.00f, 0.95f, 0.20f};
 
-    auto head = MakeSlot("head", red, "mixamorig:Head", BindingKind::LookAt);
-    auto leftHand = MakeSlot("hand_L", green, "mixamorig:LeftHand", BindingKind::IKTarget, "mixamorig:LeftArm",
-                             "mixamorig:LeftForeArm");
-    auto rightHand = MakeSlot("hand_R", blue, "mixamorig:RightHand", BindingKind::IKTarget, "mixamorig:RightArm",
-                               "mixamorig:RightForeArm");
+    auto head       = MakeSlot("head",        orange,  "mixamorig:Head", BindingKind::LookAt);
+    auto upperArmL  = MakeSlot("upperarm_L",  blue,    "", BindingKind::Hint);
+    auto lowerArmL  = MakeSlot("lowerarm_L",  green,   "", BindingKind::Hint);
+    auto palmL      = MakeSlot("palm_L",      red,     "mixamorig:LeftHand",  BindingKind::IKTarget,
+                               "mixamorig:LeftArm",  "mixamorig:LeftForeArm");
+    auto upperArmR  = MakeSlot("upperarm_R",  cyan,    "", BindingKind::Hint);
+    auto lowerArmR  = MakeSlot("lowerarm_R",  magenta, "", BindingKind::Hint);
+    auto palmR      = MakeSlot("palm_R",      yellow,  "mixamorig:RightHand", BindingKind::IKTarget,
+                               "mixamorig:RightArm", "mixamorig:RightForeArm");
 
-    // Narrow default HSV bands so ambient color noise in the webcam doesn't register
-    // as a marker. Users can widen from the UI once their real markers are in frame.
-    // Red wraps the hue circle, so we expose slot 0 at the high end; the user can
-    // add a second range via the UI if their lighting pushes red to the low end.
-    head.hsv = {160, 179, 150, 255, 80, 255};
-    leftHand.hsv = {40, 80, 150, 255, 80, 255};
-    rightHand.hsv = {100, 130, 150, 255, 80, 255};
+    // Wire IK chains to their hint markers. Slot indices match push order below.
+    palmL.upperArmMarkerSlot = 1; // upperarm_L
+    palmL.foreArmMarkerSlot  = 2; // lowerarm_L
+    palmR.upperArmMarkerSlot = 4; // upperarm_R
+    palmR.foreArmMarkerSlot  = 5; // lowerarm_R
 
-    m_uiState.markers = {head, leftHand, rightHand};
+    // Narrow default HSV bands per color. Tune from the UI under real lighting.
+    // Red wraps the hue circle; we expose the high band (165-179) — users can
+    // add a second slot for low-band red if lighting demands it.
+    head.hsv      = {  5,  18, 150, 255, 100, 255}; // orange
+    upperArmL.hsv = {105, 125, 150, 255,  80, 255}; // blue
+    lowerArmL.hsv = { 45,  75, 150, 255,  80, 255}; // green
+    palmL.hsv     = {165, 179, 150, 255,  80, 255}; // red
+    upperArmR.hsv = { 85, 100, 150, 255,  80, 255}; // cyan
+    lowerArmR.hsv = {140, 159, 150, 255,  80, 255}; // magenta
+    palmR.hsv     = { 22,  35, 150, 255, 100, 255}; // yellow
+
+    m_uiState.markers = {head, upperArmL, lowerArmL, palmL, upperArmR, lowerArmR, palmR};
     m_uiState.markersDirty = true;
     m_uiState.loadModelRequested = true;
 
@@ -199,10 +222,21 @@ void Application::RebuildBindingsFromState()
     std::vector<MarkerBinding> bindings;
     std::vector<IKChain> chains;
 
+    const int slotCount = static_cast<int>(m_uiState.markers.size());
+    auto clampSlot = [slotCount](int idx) { return (idx >= 0 && idx < slotCount) ? idx : -1; };
+
     for (size_t i = 0; i < m_uiState.markers.size(); ++i)
     {
         const auto &slot = m_uiState.markers[i];
         int observationId = static_cast<int>(i);
+
+        if (slot.binding == BindingKind::Hint)
+        {
+            // Detected only; no binding emitted. HSV ranges still flow into the
+            // detector via slot index so the observation reaches IK chains that
+            // reference this slot via upperArm/foreArmMarkerSlot.
+            continue;
+        }
 
         if (slot.binding == BindingKind::IKTarget)
         {
@@ -210,10 +244,11 @@ void Application::RebuildBindingsFromState()
                 continue;
             IKChain chain;
             chain.markerId = observationId;
+            chain.upperArmMarkerId = clampSlot(slot.upperArmMarkerSlot);
+            chain.foreArmMarkerId = clampSlot(slot.foreArmMarkerSlot);
             chain.rootBoneName = slot.ikRootBone;
             chain.midBoneName = slot.ikMidBone;
             chain.endBoneName = slot.boneName;
-            chain.poleHint = glm::vec3(0.0f, -1.0f, 0.0f);
             chains.push_back(chain);
         }
         else

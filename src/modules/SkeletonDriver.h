@@ -33,17 +33,20 @@ struct MarkerBinding
     glm::vec3 worldOffset{0.0f};
 };
 
-// Two-bone analytical IK: root bone's rotation is solved so that its chain
-// (root → mid → effector) reaches the marker-derived target, with the mid joint
-// bending toward `poleHint`. Bone lengths and bind-pose directions are sampled
-// once from the skeleton's inverse-bind matrices so repeated solves don't drift.
+// Segment-driven two-bone arm: the shoulder joint stays fixed at its bind-pose
+// position; the upper-arm bone (root) is aimed from there toward the upper-arm
+// marker, and the forearm bone (mid) is aimed toward the palm marker (falling
+// back to the lower-arm marker) so bending the elbow is read directly. Bone
+// lengths and bind-pose directions are sampled once from the skeleton's
+// inverse-bind matrices so repeated solves don't drift.
 struct IKChain
 {
-    int markerId = -1;         // drives the end-effector target
-    std::string rootBoneName;  // e.g. "mixamorig:LeftArm" (shoulder)
-    std::string midBoneName;   // e.g. "mixamorig:LeftForeArm" (elbow)
-    std::string endBoneName;   // e.g. "mixamorig:LeftHand" (hand)
-    glm::vec3 poleHint{0.0f, 0.0f, 1.0f}; // direction the elbow should prefer
+    int markerId = -1;          // palm marker — forearm aim / end-effector
+    int upperArmMarkerId = -1;  // marker on the upper arm; aims the upper-arm bone
+    int foreArmMarkerId = -1;   // marker on the forearm; forearm-aim fallback
+    std::string rootBoneName;   // e.g. "mixamorig:LeftArm" (shoulder / upper arm)
+    std::string midBoneName;    // e.g. "mixamorig:LeftForeArm" (elbow / forearm)
+    std::string endBoneName;    // e.g. "mixamorig:LeftHand" (hand)
     glm::vec3 worldOffset{0.0f};
 
     // Cached bind-pose geometry (filled lazily on first Apply). -1 lengths signal

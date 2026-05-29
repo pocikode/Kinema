@@ -1,46 +1,23 @@
 # Kinema — Project Overview
 
-## Purpose
-Kinema is a desktop C++ application for 3D motion reconstruction. It tracks physical markers via webcam, maps them to bones of a rigged 3D character skeleton, records motion as keyframes, and exports the animation as JSON, MP4/AVI video, or GLB.
+Real-time markerless-style motion capture desktop app, C++17.
 
-## Tech Stack
-- **Language**: C++17
-- **Build**: CMake 3.15+
-- **3D Engine**: Custom `Geni` engine (`external/geni/`) — OpenGL 3.3 Core, GLFW 3, GLEW, GLM, Bullet3, cgltf
-- **UI**: Dear ImGui 1.91.0 (fetched via CMake FetchContent), Tokyo Night theme
-- **Computer Vision**: OpenCV 4.7+ (`core`, `imgproc`, `videoio`, `highgui`, `objdetect`, `calib3d`)
-- **File dialogs**: portable-file-dialogs (`external/pfd/`)
-- **Platform**: macOS-first (Darwin), portable C++17
+## Pipeline
+Webcam → OpenCV HSV color-blob detection → 2D blobs unprojected to 3D → drive bones of rigged GLB (Mixamo-compatible) loaded into in-tree **Geni** engine (OpenGL + GLFW + GLEW + ImGui).
 
-## Source Layout
-```
-src/
-  Application.cpp / Application.h   # Main orchestrator (derives Geni::Application)
-  main.cpp
-  modules/
-    MarkerDetection.h/cpp            # IMarkerDetector base class; owns cv::VideoCapture
-    MarkerDetector.h                 # MarkerObservation struct
-    HSVMarkerDetector.h/cpp          # HSV color blob detection
-    ArucoMarkerDetector.h/cpp        # OpenCV ArUco tag detection + solvePnP
-    SkeletonDriver.h/cpp             # Applies observations to Geni::Skeleton (Position/PositionRotation/LookAt/IK)
-    MotionRecorder.h/cpp             # Per-bone keyframe recording & JSON v2 export
-    VideoExporter.h/cpp              # Offscreen FBO → MP4/AVI via cv::VideoWriter
-    GlbExporter.h/cpp                # Rewrites source GLB with new animation track
-  ui/
-    UIManager.h/cpp                  # ImGui sidebar, camera feed window, axis gizmo
-external/
-  geni/                              # Vendored 3D engine
-  pfd/                               # Portable file dialogs (single-header)
-assets/
-  shaders/   (unlit.vert/frag, skinned.vert/frag)
-  materials/ (unlit.mat, skinned.mat)
-  models/    (mixamo_lowpoly/mixamo-animated-lowpoly.glb — default rig)
-thesis/      # Academic thesis documents (unrelated to runtime code)
-```
+Captured motion: replayable, exportable as JSON keyframes, video (MP4/AVI), or re-baked into GLB.
 
-## Key Abstractions
-- **IMarkerDetector** — shared camera backbone; subclasses implement `Detect()` → `vector<MarkerObservation>`
-- **SkeletonDriver** — maps marker observations to bones via `MarkerBinding` (Position, PositionRotation, LookAt, IKTarget two-bone chain)
-- **MotionRecorder** — records local-space bone poses as timestamped keyframes; JSON schema v2
-- **UIManager / UIState** — ImGui UI; dirty flags (`detectorDirty`, `markersDirty`) are the UI→Application contract
-- **Application** — orchestrator: detect → drive skeleton → record → handle export requests each frame
+## Entry Point
+`src/main.cpp` constructs `Application` (subclass of `Geni::Application`) → `Geni::Engine` singleton owns GLFW window + render loop.
+
+## Per-Frame Coordinator (`Application::Update`)
+1. `m_detector->Detect()` — `HSVMarkerDetector` grabs webcam frame, HSV-thresholds each `HSVRange`, emits one `MarkerObservation` per slot (`id = slot index`).
+2. `SkeletonDriver::Apply` — walks `MarkerBinding`s (Position/LookAt) + `IKChain`s (analytical 2-bone IK), mutates skeleton joint GameObjects. Bind-pose geometry sampled lazily on first apply, cached on chain.
+3. If recording: `MotionRecorder::AddSkeletonKeyframe` samples local-space bone poses (re-parenting-safe).
+4. `UIManager::BuildUI` renders ImGui sidebar against `UIState`. Flags on `UIState` (`loadModelRequested`, `markersDirty`, `startRecordRequested`, `exportGlbRequested`...) are the contract — UI sets flags, `Application` drains + calls module.
+
+## Important Seams
+- **UIManager ↔ SkeletonDriver translation**: UI uses `MarkerSlot` w/ `BindingKind` (Position/IKTarget/LookAt). `Application::RebuildBindingsFromState` translates to parallel `MarkerBinding` + `IKChain` lists. Slot identity = vector index = `MarkerObservation::id`. Reordering reshuffles identities.
+- **2D → 3D unprojection**: `Application::Unproject2DtoWorld` uses normalized centroid + blob `areaPixels` against `m_depthRefDist`/`m_depthRefArea` as depth proxy. Driver receives this as `std::function<glm::vec3(MarkerObservation&)>` callback — math stays in Application.
+- **Geni boundary**: everything Geni (Scene, GameObject, Skeleton, Material, Mesh, AnimationComponent) via single `<geni.h>` umbrella header. Bones are GameObjects under `Geni::Skeleton`; drive bone = write transform component → Geni propagates skinning matrices.
+- **Exporters**: `MotionRecorder::SaveToJson` writes v2 schema (per-bone local pose map). `VideoExporter` re-renders viewport frames into OpenCV `VideoWriter`. `GlbExporter` bakes recorded keyframes back into source GLB.
