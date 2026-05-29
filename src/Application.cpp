@@ -1,5 +1,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include "Application.h"
+#include "modules/MarkerConfigIO.h"
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <imgui.h>
@@ -392,6 +393,18 @@ void Application::Update(float deltaTime)
         m_playback = !m_recorder.GetKeyframes().empty();
         m_uiState.reconstructRequested = false;
     }
+    if (m_uiState.exportMarkersRequested)
+    {
+        SaveMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers);
+        m_uiState.exportMarkersRequested = false;
+    }
+    if (m_uiState.importMarkersRequested)
+    {
+        if (LoadMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers))
+            m_uiState.markersDirty = true; // re-validate bindings + resync detector ranges
+        m_uiState.importMarkersRequested = false;
+    }
+
     auto joinPath = [this](const char *ext) {
         std::string p = m_uiState.exportDir;
         if (!p.empty() && p.back() != '/' && p.back() != '\\')

@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 namespace
 {
@@ -380,6 +382,47 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
         state.markers.pop_back();
         state.markersDirty = true;
     }
+
+    // pfd's macOS backend (osascript "default location") requires an existing
+    // directory; a relative or non-existent path makes the dialog fail to open
+    // a usable picker. Resolve the last-used path to its parent directory,
+    // falling back to $HOME / cwd.
+    auto startDir = [&state]() -> std::string {
+        std::error_code ec;
+        std::filesystem::path p = state.markerConfigPath;
+        std::filesystem::path dir = p.has_parent_path() ? p.parent_path() : std::filesystem::current_path(ec);
+        if (std::filesystem::is_directory(dir, ec))
+            return dir.string();
+        if (const char *home = std::getenv("HOME"))
+            return home;
+        return ".";
+    };
+
+    if (ImGui::Button("Export config..."))
+    {
+        std::string start = startDir() + "/markers.json";
+        std::string picked =
+            pfd::save_file("Export marker config", start, {"JSON files", "*.json", "All Files", "*"}).result();
+        if (!picked.empty())
+        {
+            std::strncpy(state.markerConfigPath, picked.c_str(), sizeof(state.markerConfigPath) - 1);
+            state.markerConfigPath[sizeof(state.markerConfigPath) - 1] = 0;
+            state.exportMarkersRequested = true;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Import config..."))
+    {
+        auto picked =
+            pfd::open_file("Import marker config", startDir(), {"JSON files", "*.json", "All Files", "*"}).result();
+        if (!picked.empty())
+        {
+            std::strncpy(state.markerConfigPath, picked[0].c_str(), sizeof(state.markerConfigPath) - 1);
+            state.markerConfigPath[sizeof(state.markerConfigPath) - 1] = 0;
+            state.importMarkersRequested = true;
+        }
+    }
+    ImGui::Spacing();
 
     for (size_t i = 0; i < state.markers.size(); ++i)
     {

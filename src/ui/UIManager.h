@@ -46,6 +46,11 @@ struct UIState
     std::vector<MarkerSlot> markers;
     bool markersDirty = false; // set when any slot config changes (bindings, HSV ranges, etc.)
 
+    // Marker config persistence (HSV bands + bindings reuse across sessions)
+    char markerConfigPath[512] = "markers.json";
+    bool exportMarkersRequested = false;
+    bool importMarkersRequested = false;
+
     // Model import
     char modelPath[512] = "models/mixamo_lowpoly/mixamo-animated-lowpoly.glb";
     std::string loadedModelPath;
