@@ -400,9 +400,10 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
 
     if (ImGui::Button("Export config..."))
     {
-        std::string start = startDir() + "/markers.json";
+        // pfd uses the default path as osascript's "default location", which must
+        // be a folder — a file path errors out (-1700) and the dialog never opens.
         std::string picked =
-            pfd::save_file("Export marker config", start, {"JSON files", "*.json", "All Files", "*"}).result();
+            pfd::save_file("Export marker config", startDir(), {"JSON files", "*.json", "All Files", "*"}).result();
         if (!picked.empty())
         {
             std::strncpy(state.markerConfigPath, picked.c_str(), sizeof(state.markerConfigPath) - 1);
@@ -467,6 +468,14 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
             changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
             changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
+
+            // Red wraps the hue circle — enable a second hue band to catch both ends.
+            changed |= ImGui::Checkbox("Dual hue (red)##dual_hue", &slot.hsv.dualHue);
+            if (slot.hsv.dualHue)
+            {
+                changed |= ImGui::SliderInt("H min 2##h_min2", &slot.hsv.hMin2, 0, 179);
+                changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
+            }
             if (changed)
             {
                 // Keep the overlay swatch visually honest: reflect the band's

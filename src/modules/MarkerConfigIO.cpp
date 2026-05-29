@@ -30,6 +30,8 @@ bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &ma
                 {"name", s.name},
                 {"color", {s.overlayColor[0], s.overlayColor[1], s.overlayColor[2], s.overlayColor[3]}},
                 {"hsv", {s.hsv.hMin, s.hsv.hMax, s.hsv.sMin, s.hsv.sMax, s.hsv.vMin, s.hsv.vMax}},
+                {"dualHue", s.hsv.dualHue},
+                {"hsv2", {s.hsv.hMin2, s.hsv.hMax2}},
                 {"binding", static_cast<int>(s.binding)},
                 {"boneName", s.boneName},
                 {"ikRootBone", s.ikRootBone},
@@ -87,6 +89,15 @@ bool LoadMarkerConfig(const std::string &path, std::vector<MarkerSlot> &markers)
             s.hsv.sMax = hsv[3];
             s.hsv.vMin = hsv[4];
             s.hsv.vMax = hsv[5];
+
+            // Optional (added later): backward-compatible with single-band configs.
+            s.hsv.dualHue = e.value("dualHue", false);
+            if (e.contains("hsv2"))
+            {
+                auto hsv2 = e.at("hsv2");
+                s.hsv.hMin2 = hsv2[0];
+                s.hsv.hMax2 = hsv2[1];
+            }
 
             s.binding = static_cast<BindingKind>(e.value("binding", 0));
             CopyToBuf(s.boneName, sizeof(s.boneName), e.value("boneName", std::string("")));

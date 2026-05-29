@@ -99,7 +99,7 @@ bool Application::Init()
     head.hsv      = {  5,  18, 150, 255, 100, 255}; // orange
     upperArmL.hsv = {105, 125, 150, 255,  80, 255}; // blue
     lowerArmL.hsv = { 45,  75, 150, 255,  80, 255}; // green
-    palmL.hsv     = {165, 179, 150, 255,  80, 255}; // red
+    palmL.hsv     = {165, 179, 150, 255,  80, 255, true, 0, 10}; // red (dual hue: wraps 0/179)
     upperArmR.hsv = { 85, 100, 150, 255,  80, 255}; // cyan
     lowerArmR.hsv = {140, 159, 150, 255,  80, 255}; // magenta
     palmR.hsv     = { 22,  35, 150, 255, 100, 255}; // yellow

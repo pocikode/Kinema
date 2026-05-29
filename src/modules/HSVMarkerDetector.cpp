@@ -33,6 +33,13 @@ std::vector<MarkerObservation> HSVMarkerDetector::Detect()
 
         cv::inRange(m_frameHSV, cv::Scalar(range.hMin, range.sMin, range.vMin),
                     cv::Scalar(range.hMax, range.sMax, range.vMax), m_rangeMask);
+        if (range.dualHue)
+        {
+            // Second hue band for wrap-around colors (red). Same S/V bounds.
+            cv::inRange(m_frameHSV, cv::Scalar(range.hMin2, range.sMin, range.vMin),
+                        cv::Scalar(range.hMax2, range.sMax, range.vMax), m_rangeMask2);
+            cv::bitwise_or(m_rangeMask, m_rangeMask2, m_rangeMask);
+        }
         cv::morphologyEx(m_rangeMask, m_rangeMask, cv::MORPH_OPEN, kernel);
         cv::morphologyEx(m_rangeMask, m_rangeMask, cv::MORPH_CLOSE, kernel);
         cv::bitwise_or(m_mask, m_rangeMask, m_mask);
