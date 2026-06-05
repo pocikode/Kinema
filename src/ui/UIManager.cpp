@@ -365,6 +365,12 @@ void UIManager::DrawDetectorSection(UIState &state)
 {
     ImGui::Text("HSV Color Tracking");
     ImGui::Spacing();
+
+    ImGui::Text("Jitter Filter");
+    ImGui::SliderFloat("Smoothing", &state.markerSmoothing, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Deadzone", &state.markerDeadzone, 0.0f, 0.05f, "%.3f");
+    ImGui::SliderFloat("Arm forward", &state.armForward, -1.0f, 2.0f, "%.2f");
+    ImGui::Spacing();
 }
 
 void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObservation> &observations)

@@ -46,6 +46,11 @@ struct UIState
     std::vector<MarkerSlot> markers;
     bool markersDirty = false; // set when any slot config changes (bindings, HSV ranges, etc.)
 
+    // Marker jitter filter (deadzone + EMA on 2D centroids); live-tunable
+    float markerSmoothing = 0.35f; // EMA factor 0..1 (higher = snappier, less smooth)
+    float markerDeadzone = 0.012f; // normalized centroid radius held as no-move
+    float armForward = 0.0f;       // constant forward lean of IK arms (world units)
+
     // Marker config persistence (HSV bands + bindings reuse across sessions)
     char markerConfigPath[512] = "markers.json";
     bool exportMarkersRequested = false;

@@ -3,6 +3,7 @@
 #include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
 #include "modules/MarkerDetection.h"
+#include "modules/MarkerStabilizer.h"
 #include "modules/MotionRecorder.h"
 #include "modules/SkeletonDriver.h"
 #include "modules/VideoExporter.h"
@@ -33,6 +34,7 @@ class Application : public Geni::Application
     UIManager m_uiManager;
     UIState m_uiState;
     SkeletonDriver m_skelDriver;
+    MarkerStabilizer m_stabilizer;
 
     // Scene objects (non-owning pointers — owned by Scene)
     Geni::Scene *m_scene = nullptr;

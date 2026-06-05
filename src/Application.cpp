@@ -317,6 +317,7 @@ void Application::Update(float deltaTime)
     if (m_uiState.markersDirty)
     {
         RebuildBindingsFromState();
+        m_stabilizer.Reset(); // slot ids may have shuffled; drop stale per-id state
         m_uiState.markersDirty = false;
     }
 
@@ -334,6 +335,13 @@ void Application::Update(float deltaTime)
     std::vector<MarkerObservation> observations;
     if (m_detector)
         observations = m_detector->Detect();
+
+    // Deadzone + EMA before anything consumes the observations, so marker jitter
+    // doesn't sway the rig. Knobs are live-tunable from the UI.
+    m_stabilizer.alpha = m_uiState.markerSmoothing;
+    m_stabilizer.deadzone = m_uiState.markerDeadzone;
+    m_stabilizer.Filter(observations);
+    m_skelDriver.armForward = m_uiState.armForward;
 
     if (m_playback && m_riggedSkeleton)
     {

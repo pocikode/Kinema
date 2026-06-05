@@ -260,6 +260,17 @@ void SkeletonDriver::Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObs
         if (haveP)
             palmMarker += chain.worldOffset;
 
+        // Constant forward lean: the solver aims bones by inter-marker direction, so
+        // only the Z *difference* between markers tilts the arm. Push the markers
+        // toward the front of the body by a graduated amount down the chain (upper
+        // stays at the shoulder plane, elbow half, palm full) so the whole arm leans
+        // forward out of the flat frontal plane.
+        if (armForward != 0.0f)
+        {
+            lowerMarker.z += armForward * 0.5f;
+            palmMarker.z += armForward;
+        }
+
         SolveArmChain(rootBone, midBone, chain, rootPos, upperMarker, haveU, lowerMarker, haveL,
                       palmMarker, haveP);
     }

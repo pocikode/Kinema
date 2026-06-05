@@ -54,6 +54,7 @@ set(SRC_FILES
     src/modules/MarkerDetection.cpp
     src/modules/MarkerConfigIO.cpp
     src/modules/HSVMarkerDetector.cpp
+    src/modules/MarkerStabilizer.cpp
     src/modules/MotionRecorder.cpp
     src/modules/SkeletonDriver.cpp
     src/modules/VideoExporter.cpp

@@ -75,6 +75,11 @@ class SkeletonDriver
     // are silently skipped so the rest of the rig stays in its bind pose.
     void Apply(Geni::Skeleton &skeleton, const std::vector<MarkerObservation> &observations, const Unproject &unproject);
 
+    // Constant forward lean for every IK arm chain. Tilts the whole arm (upper +
+    // forearm) toward the front of the body by a fixed amount — applied at rest and
+    // when bent. 0 = pure frontal-plane solve (markers stay in the shoulder plane).
+    float armForward = 0.0f;
+
   private:
     std::vector<MarkerBinding> m_bindings;
     std::vector<IKChain> m_chains;
