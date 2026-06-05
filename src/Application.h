@@ -55,6 +55,7 @@ class Application : public Geni::Application
     float m_fps = 0.0f;
     float m_playbackTime = 0.0f;
     bool m_playback = false;
+    float m_cameraRetryTimer = 0.0f;
 
     // Calibration for 2D→3D mapping
     float m_depthRefDist = 2.0f;

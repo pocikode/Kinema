@@ -351,7 +351,27 @@ void Application::Update(float deltaTime)
 
     std::vector<MarkerObservation> observations;
     if (m_detector)
+    {
         observations = m_detector->Detect();
+
+        // macOS camera-permission workaround: if the device is open but not
+        // delivering frames, periodically rebuild the detector so a post-launch
+        // permission grant is picked up without restarting the app.
+        bool hasValidFrame = m_detector->IsOpen() && !m_detector->GetLastFrame().empty();
+        if (!hasValidFrame)
+        {
+            m_cameraRetryTimer += deltaTime;
+            if (m_cameraRetryTimer >= 1.0f)
+            {
+                RebuildDetectorFromState();
+                m_cameraRetryTimer = 0.0f;
+            }
+        }
+        else
+        {
+            m_cameraRetryTimer = 0.0f;
+        }
+    }
 
     // Deadzone + EMA before anything consumes the observations, so marker jitter
     // doesn't sway the rig. Knobs are live-tunable from the UI.
