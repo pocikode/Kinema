@@ -26,6 +26,7 @@ struct MarkerSlot
     float overlayColor[4] = {0.2f, 1.0f, 0.4f, 1.0f};
 
     HSVRange hsv;
+    RGBRatioRange rgb; // used when UIState.detectionMode == RGBRatio
 
     BindingKind binding = BindingKind::Position;
     char boneName[64] = "";   // target bone (end-effector when IKTarget)
@@ -40,11 +41,24 @@ struct MarkerSlot
     int foreArmMarkerSlot = -1;
 };
 
+// Which detector backend drives all marker slots.
+enum class DetectionMode
+{
+    HSV,      // HSVMarkerDetector
+    RGBRatio, // RGBRatioMarkerDetector
+};
+
 struct UIState
 {
     // Marker slots
     std::vector<MarkerSlot> markers;
     bool markersDirty = false; // set when any slot config changes (bindings, HSV ranges, etc.)
+
+    // Detector backend selection
+    DetectionMode detectionMode = DetectionMode::HSV;
+    bool detectionModeDirty = false; // set when mode changes; triggers detector rebuild
+    int rgbPoolSize = 8;             // RGB-ratio average-pool block size
+    bool showPooledFrame = false;    // show pooled frame instead of raw in camera feed
 
     // Marker jitter filter (deadzone + EMA on 2D centroids); live-tunable
     float markerSmoothing = 0.35f; // EMA factor 0..1 (higher = snappier, less smooth)

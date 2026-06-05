@@ -18,3 +18,16 @@ struct HSVRange
     int hMin2 = 0;
     int hMax2 = 10;
 };
+
+// Ratio-based color band used by RGBRatioMarkerDetector. A pixel matches when
+// its R/G and R/B channel ratios both fall inside the configured windows and it
+// is bright enough (max channel > vMin). Red, for example, sits around
+// R/G in [1..5] and R/B in [2..4].
+struct RGBRatioRange
+{
+    float rgMin = 1.0f;
+    float rgMax = 5.0f;
+    float rbMin = 2.0f;
+    float rbMax = 4.0f;
+    int vMin = 50; // reject dark pixels: max(B,G,R) must exceed this
+};

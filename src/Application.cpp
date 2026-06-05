@@ -213,8 +213,10 @@ void Application::RebuildDetectorFromState()
     if (m_detector)
         m_detector->Destroy();
 
-    auto hsv = std::make_unique<HSVMarkerDetector>();
-    m_detector = std::move(hsv);
+    if (m_uiState.detectionMode == DetectionMode::RGBRatio)
+        m_detector = std::make_unique<RGBRatioMarkerDetector>();
+    else
+        m_detector = std::make_unique<HSVMarkerDetector>();
     m_detector->Init(0);
 }
 
@@ -314,6 +316,12 @@ void Application::Update(float deltaTime)
         }
         m_uiState.resetModelRequested = false;
     }
+    if (m_uiState.detectionModeDirty)
+    {
+        RebuildDetectorFromState(); // swap HSV <-> RGB-ratio backend
+        m_stabilizer.Reset();
+        m_uiState.detectionModeDirty = false;
+    }
     if (m_uiState.markersDirty)
     {
         RebuildBindingsFromState();
@@ -321,7 +329,7 @@ void Application::Update(float deltaTime)
         m_uiState.markersDirty = false;
     }
 
-    // Each frame, sync per-slot HSV ranges into the detector — cheap and lets the
+    // Each frame, sync per-slot color config into the detector — cheap and lets the
     // slider feedback be immediate without needing an explicit "apply" press.
     if (auto *hsv = dynamic_cast<HSVMarkerDetector *>(m_detector.get()))
     {
@@ -330,6 +338,15 @@ void Application::Update(float deltaTime)
         for (const auto &slot : m_uiState.markers)
             ranges.push_back(slot.hsv);
         hsv->SetRanges(ranges);
+    }
+    else if (auto *rgb = dynamic_cast<RGBRatioMarkerDetector *>(m_detector.get()))
+    {
+        std::vector<RGBRatioRange> ranges;
+        ranges.reserve(m_uiState.markers.size());
+        for (const auto &slot : m_uiState.markers)
+            ranges.push_back(slot.rgb);
+        rgb->SetRanges(ranges);
+        rgb->SetPoolSize(m_uiState.rgbPoolSize);
     }
 
     std::vector<MarkerObservation> observations;
@@ -378,7 +395,13 @@ void Application::Update(float deltaTime)
 
     if (m_detector && m_detector->IsOpen())
     {
-        m_uiManager.UploadCameraFeed(m_detector->GetLastFrame(), m_uiState);
+        const cv::Mat *feed = &m_detector->GetLastFrame();
+        if (m_uiState.showPooledFrame)
+        {
+            if (auto *rgb = dynamic_cast<RGBRatioMarkerDetector *>(m_detector.get()))
+                feed = &rgb->GetPooledFrame();
+        }
+        m_uiManager.UploadCameraFeed(*feed, m_uiState);
     }
 
     auto *cam = m_cameraObj->GetComponent<Geni::CameraComponent>();

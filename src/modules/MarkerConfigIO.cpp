@@ -32,6 +32,7 @@ bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &ma
                 {"hsv", {s.hsv.hMin, s.hsv.hMax, s.hsv.sMin, s.hsv.sMax, s.hsv.vMin, s.hsv.vMax}},
                 {"dualHue", s.hsv.dualHue},
                 {"hsv2", {s.hsv.hMin2, s.hsv.hMax2}},
+                {"rgb", {s.rgb.rgMin, s.rgb.rgMax, s.rgb.rbMin, s.rgb.rbMax, s.rgb.vMin}},
                 {"binding", static_cast<int>(s.binding)},
                 {"boneName", s.boneName},
                 {"ikRootBone", s.ikRootBone},
@@ -97,6 +98,17 @@ bool LoadMarkerConfig(const std::string &path, std::vector<MarkerSlot> &markers)
                 auto hsv2 = e.at("hsv2");
                 s.hsv.hMin2 = hsv2[0];
                 s.hsv.hMax2 = hsv2[1];
+            }
+
+            // Optional (added later): RGB-ratio band. Missing keeps defaults.
+            if (e.contains("rgb"))
+            {
+                auto rgb = e.at("rgb");
+                s.rgb.rgMin = rgb[0];
+                s.rgb.rgMax = rgb[1];
+                s.rgb.rbMin = rgb[2];
+                s.rgb.rbMax = rgb[3];
+                s.rgb.vMin = rgb[4];
             }
 
             s.binding = static_cast<BindingKind>(e.value("binding", 0));

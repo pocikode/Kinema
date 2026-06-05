@@ -363,7 +363,18 @@ void UIManager::DrawModelSection(UIState &state)
 
 void UIManager::DrawDetectorSection(UIState &state)
 {
-    ImGui::Text("HSV Color Tracking");
+    ImGui::Text("Color Tracking");
+    int modeIdx = static_cast<int>(state.detectionMode);
+    if (ImGui::Combo("Mode##detection_mode", &modeIdx, "HSV\0RGB Ratio\0"))
+    {
+        state.detectionMode = static_cast<DetectionMode>(modeIdx);
+        state.detectionModeDirty = true;
+    }
+    if (state.detectionMode == DetectionMode::RGBRatio)
+    {
+        ImGui::SliderInt("Pool size##rgb_pool", &state.rgbPoolSize, 2, 32);
+        ImGui::Checkbox("Show pooled frame##show_pooled", &state.showPooledFrame);
+    }
     ImGui::Spacing();
 
     ImGui::Text("Jitter Filter");
@@ -444,13 +455,17 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             if (ImGui::ColorEdit3("Color##slot_color", slot.overlayColor,
                                   ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
             {
-                // Picker drives the HSV detection band: derive H from the
-                // chosen RGB and re-center the slot's H window around it.
-                // S/V stay user-controlled via their own sliders.
-                int H = RgbToOpenCvHue(slot.overlayColor);
-                const int halfBand = 7;
-                slot.hsv.hMin = ((H - halfBand) % 180 + 180) % 180;
-                slot.hsv.hMax = (H + halfBand) % 180;
+                // In HSV mode the picker drives the detection band: derive H from
+                // the chosen RGB and re-center the slot's H window around it.
+                // S/V stay user-controlled via their own sliders. In RGB-ratio
+                // mode the swatch is overlay-only (ratios are set by their sliders).
+                if (state.detectionMode == DetectionMode::HSV)
+                {
+                    int H = RgbToOpenCvHue(slot.overlayColor);
+                    const int halfBand = 7;
+                    slot.hsv.hMin = ((H - halfBand) % 180 + 180) % 180;
+                    slot.hsv.hMax = (H + halfBand) % 180;
+                }
                 state.markersDirty = true;
             }
 
@@ -467,31 +482,53 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
                                matched ? "detected" : "—");
 
             ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
-            bool changed = false;
-            changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
-            changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
-            changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
-            changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
-            changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
-            changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
+            if (state.detectionMode == DetectionMode::HSV)
+            {
+                bool changed = false;
+                changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
+                changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
+                changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
+                changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
+                changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
+                changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
 
-            // Red wraps the hue circle — enable a second hue band to catch both ends.
-            changed |= ImGui::Checkbox("Dual hue (red)##dual_hue", &slot.hsv.dualHue);
-            if (slot.hsv.dualHue)
-            {
-                changed |= ImGui::SliderInt("H min 2##h_min2", &slot.hsv.hMin2, 0, 179);
-                changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
+                // Red wraps the hue circle — enable a second hue band to catch both ends.
+                changed |= ImGui::Checkbox("Dual hue (red)##dual_hue", &slot.hsv.dualHue);
+                if (slot.hsv.dualHue)
+                {
+                    changed |= ImGui::SliderInt("H min 2##h_min2", &slot.hsv.hMin2, 0, 179);
+                    changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
+                }
+                if (changed)
+                {
+                    // Keep the overlay swatch visually honest: reflect the band's
+                    // center hue + center saturation/value so the picker always
+                    // shows what the detector is looking for.
+                    int hc = HueCenter(slot.hsv.hMin, slot.hsv.hMax);
+                    int sc = (slot.hsv.sMin + slot.hsv.sMax) / 2;
+                    int vc = (slot.hsv.vMin + slot.hsv.vMax) / 2;
+                    OpenCvHsvToRgb(hc, sc, vc, slot.overlayColor);
+                    state.markersDirty = true;
+                }
             }
-            if (changed)
+            else
             {
-                // Keep the overlay swatch visually honest: reflect the band's
-                // center hue + center saturation/value so the picker always
-                // shows what the detector is looking for.
-                int hc = HueCenter(slot.hsv.hMin, slot.hsv.hMax);
-                int sc = (slot.hsv.sMin + slot.hsv.sMax) / 2;
-                int vc = (slot.hsv.vMin + slot.hsv.vMax) / 2;
-                OpenCvHsvToRgb(hc, sc, vc, slot.overlayColor);
-                state.markersDirty = true;
+                bool changed = false;
+                changed |= ImGui::InputFloat("R/G min##rg_min", &slot.rgb.rgMin, 0.1f, 1.0f, "%.2f");
+                changed |= ImGui::InputFloat("R/G max##rg_max", &slot.rgb.rgMax, 0.1f, 1.0f, "%.2f");
+                changed |= ImGui::InputFloat("R/B min##rb_min", &slot.rgb.rbMin, 0.1f, 1.0f, "%.2f");
+                changed |= ImGui::InputFloat("R/B max##rb_max", &slot.rgb.rbMax, 0.1f, 1.0f, "%.2f");
+                changed |= ImGui::InputInt("Brightness min##rgb_vmin", &slot.rgb.vMin, 1, 10);
+                if (changed)
+                {
+                    // Keep ratios non-negative; brightness floor in [0,255].
+                    slot.rgb.rgMin = std::max(0.0f, slot.rgb.rgMin);
+                    slot.rgb.rgMax = std::max(0.0f, slot.rgb.rgMax);
+                    slot.rgb.rbMin = std::max(0.0f, slot.rgb.rbMin);
+                    slot.rgb.rbMax = std::max(0.0f, slot.rgb.rbMax);
+                    slot.rgb.vMin = std::clamp(slot.rgb.vMin, 0, 255);
+                    state.markersDirty = true;
+                }
             }
 
             int bindingIdx = static_cast<int>(slot.binding);

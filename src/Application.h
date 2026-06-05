@@ -5,6 +5,7 @@
 #include "modules/MarkerDetection.h"
 #include "modules/MarkerStabilizer.h"
 #include "modules/MotionRecorder.h"
+#include "modules/RGBRatioMarkerDetector.h"
 #include "modules/SkeletonDriver.h"
 #include "modules/VideoExporter.h"
 #include "ui/UIManager.h"
