@@ -29,5 +29,6 @@ class RGBRatioMarkerDetector : public IMarkerDetector
     // Scratch buffers reused across Detect() calls to avoid per-frame allocations.
     cv::Mat m_pooled;     // average-pooled BGR (pooled resolution)
     cv::Mat m_pooledView; // m_pooled upscaled to full res for display
-    cv::Mat m_rangeMask;  // per-range threshold (pooled resolution)
+    cv::Mat m_label;      // per-pixel argmax range index (CV_16S, -1 = unassigned)
+    cv::Mat m_rangeMask;  // single-range mask extracted from m_label (pooled res)
 };

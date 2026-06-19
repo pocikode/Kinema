@@ -49,46 +49,80 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
     const double areaFloor = std::max(1.0, 500.0 / (static_cast<double>(pool) * pool));
     constexpr float kThird = 1.0f / 3.0f;
 
-    for (size_t ri = 0; ri < m_ranges.size(); ++ri)
+    const int n = static_cast<int>(m_ranges.size());
+
+    // Per-range chromaticity anchor (window center) + active flag.
+    std::vector<float> rnA(n, 0.0f), gnA(n, 0.0f);
+    std::vector<unsigned char> active(n, 0);
+    for (int ri = 0; ri < n; ++ri)
+    {
+        active[ri] = BlobCount(ri) > 0 ? 1 : 0; // 0 = paired follower slot, skipped
+        const auto &r = m_ranges[ri];
+        rnA[ri] = 0.5f * (r.rMin + r.rMax);
+        gnA[ri] = 0.5f * (r.gMin + r.gMax);
+    }
+
+    // Per-pixel argmax: a pixel satisfying several ranges' windows is assigned
+    // to the single nearest chromaticity anchor, so overlapping color windows
+    // can't double-claim the same blob (the main source of identity swaps).
+    m_label.create(m_pooled.size(), CV_16S);
+    m_label.setTo(-1);
+    for (int y = 0; y < m_pooled.rows; ++y)
+    {
+        const cv::Vec3b *row = m_pooled.ptr<cv::Vec3b>(y);
+        short *lrow = m_label.ptr<short>(y);
+        for (int x = 0; x < m_pooled.cols; ++x)
+        {
+            // OpenCV stores BGR.
+            const float b = row[x][0];
+            const float g = row[x][1];
+            const float r = row[x][2];
+            const float total = r + g + b;
+            if (total < 1e-5f)
+                continue;
+            const float mean = total / 3.0f;
+            const float rn = r / total;
+            const float gn = g / total;
+            const float bn = b / total;
+            // Saturation: how far the chromaticity sits from neutral (1/3,1/3,1/3).
+            const float sat =
+                std::max({std::fabs(rn - kThird), std::fabs(gn - kThird), std::fabs(bn - kThird)});
+
+            int best = -1;
+            float bestDist = 1e9f;
+            for (int ri = 0; ri < n; ++ri)
+            {
+                if (!active[ri])
+                    continue;
+                const auto &range = m_ranges[ri];
+                if (mean <= static_cast<float>(range.vMin))
+                    continue; // too dark
+                if (sat < range.satMin)
+                    continue; // too gray/washed out
+                if (rn < range.rMin || rn > range.rMax || gn < range.gMin || gn > range.gMax)
+                    continue;
+                const float drn = rn - rnA[ri];
+                const float dgn = gn - gnA[ri];
+                const float d = drn * drn + dgn * dgn;
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    best = ri;
+                }
+            }
+            lrow[x] = static_cast<short>(best);
+        }
+    }
+
+    for (int ri = 0; ri < n; ++ri)
     {
         const int want = BlobCount(ri);
         if (want <= 0)
         {
             continue; // paired follower slot: resolved from its primary's range
         }
-        const auto &range = m_ranges[ri];
 
-        m_rangeMask = cv::Mat::zeros(m_pooled.size(), CV_8UC1);
-        for (int y = 0; y < m_pooled.rows; ++y)
-        {
-            const cv::Vec3b *row = m_pooled.ptr<cv::Vec3b>(y);
-            uchar *mrow = m_rangeMask.ptr<uchar>(y);
-            for (int x = 0; x < m_pooled.cols; ++x)
-            {
-                // OpenCV stores BGR.
-                const float b = row[x][0];
-                const float g = row[x][1];
-                const float r = row[x][2];
-                const float total = r + g + b;
-                if (total < 1e-5f)
-                    continue;
-                if (total / 3.0f <= static_cast<float>(range.vMin))
-                    continue; // too dark
-
-                const float rn = r / total;
-                const float gn = g / total;
-                const float bn = b / total;
-                // Saturation: how far the chromaticity sits from neutral (1/3,1/3,1/3).
-                const float sat =
-                    std::max({std::fabs(rn - kThird), std::fabs(gn - kThird), std::fabs(bn - kThird)});
-                if (sat < range.satMin)
-                    continue; // too gray/washed out
-
-                if (rn >= range.rMin && rn <= range.rMax && gn >= range.gMin && gn <= range.gMax)
-                    mrow[x] = 255;
-            }
-        }
-
+        cv::compare(m_label, ri, m_rangeMask, cv::CMP_EQ);
         cv::morphologyEx(m_rangeMask, m_rangeMask, cv::MORPH_OPEN, kernel);
         cv::morphologyEx(m_rangeMask, m_rangeMask, cv::MORPH_CLOSE, kernel);
         cv::bitwise_or(poolMask, m_rangeMask, poolMask);

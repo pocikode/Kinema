@@ -74,16 +74,16 @@ bool Application::Init()
     const float green[3]   = {0.30f, 1.00f, 0.40f};
     const float red[3]     = {1.00f, 0.30f, 0.30f};
     const float cyan[3]    = {0.30f, 0.85f, 1.00f};
-    const float magenta[3] = {1.00f, 0.40f, 0.95f};
+    const float pink[3]    = {1.00f, 0.45f, 0.75f};
     const float yellow[3]  = {1.00f, 0.95f, 0.20f};
 
     auto head       = MakeSlot("head",        orange,  "mixamorig:Head", BindingKind::LookAt);
-    auto upperArmL  = MakeSlot("upperarm_L",  blue,    "", BindingKind::Hint);
+    auto upperArmL  = MakeSlot("upperarm_L",  red,     "", BindingKind::Hint);
     auto lowerArmL  = MakeSlot("lowerarm_L",  green,   "", BindingKind::Hint);
-    auto palmL      = MakeSlot("palm_L",      red,     "mixamorig:LeftHand",  BindingKind::IKTarget,
+    auto palmL      = MakeSlot("palm_L",      blue,    "mixamorig:LeftHand",  BindingKind::IKTarget,
                                "mixamorig:LeftArm",  "mixamorig:LeftForeArm");
     auto upperArmR  = MakeSlot("upperarm_R",  cyan,    "", BindingKind::Hint);
-    auto lowerArmR  = MakeSlot("lowerarm_R",  magenta, "", BindingKind::Hint);
+    auto lowerArmR  = MakeSlot("lowerarm_R",  pink,    "", BindingKind::Hint);
     auto palmR      = MakeSlot("palm_R",      yellow,  "mixamorig:RightHand", BindingKind::IKTarget,
                                "mixamorig:RightArm", "mixamorig:RightForeArm");
 
@@ -97,11 +97,12 @@ bool Application::Init()
     // Red wraps the hue circle; we expose the high band (165-179) — users can
     // add a second slot for low-band red if lighting demands it.
     head.hsv      = {  5,  18, 150, 255, 100, 255}; // orange
-    upperArmL.hsv = {105, 125, 150, 255,  80, 255}; // blue
+    upperArmL.hsv = {165, 179, 150, 255,  80, 255, true, 0, 10}; // red (dual hue: wraps 0/179)
     lowerArmL.hsv = { 45,  75, 150, 255,  80, 255}; // green
-    palmL.hsv     = {165, 179, 150, 255,  80, 255, true, 0, 10}; // red (dual hue: wraps 0/179)
+    palmL.hsv     = {105, 125, 150, 255,  80, 255}; // blue
     upperArmR.hsv = { 85, 100, 150, 255,  80, 255}; // cyan
-    lowerArmR.hsv = {140, 159, 150, 255,  80, 255}; // magenta
+    lowerArmR.hsv = {150, 172,  70, 200, 100, 255}; // pink (low S ceiling so the
+                                                    // sat-aware argmax splits it from vivid red)
     palmR.hsv     = { 22,  35, 150, 255, 100, 255}; // yellow
 
     m_uiState.markers = {head, upperArmL, lowerArmL, palmL, upperArmR, lowerArmR, palmR};

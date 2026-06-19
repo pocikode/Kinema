@@ -9,6 +9,11 @@ bool IMarkerDetector::Init(int cameraIndex)
     }
     m_width = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
     m_height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    // Lock auto white-balance so marker hue/chromaticity stays stable frame to
+    // frame. Auto-WB drift silently shifts measured colors, which is a common
+    // cause of dropped/swapped marker identities. Best effort: backends that
+    // don't support the property (e.g. some macOS AVFoundation paths) ignore it.
+    m_cap.set(cv::CAP_PROP_AUTO_WB, 0.0);
     return true;
 }
 

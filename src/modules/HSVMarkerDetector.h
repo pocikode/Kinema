@@ -21,6 +21,6 @@ class HSVMarkerDetector : public IMarkerDetector
 
     // Scratch buffers reused across Detect() calls to avoid per-frame allocations.
     cv::Mat m_frameHSV;
-    cv::Mat m_rangeMask;
-    cv::Mat m_rangeMask2; // second hue band scratch (dualHue / red wrap-around)
+    cv::Mat m_label;     // per-pixel argmax range index (CV_16S, -1 = unassigned)
+    cv::Mat m_rangeMask; // single-range mask extracted from m_label
 };
