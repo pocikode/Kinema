@@ -543,18 +543,20 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             else
             {
                 bool changed = false;
-                changed |= ImGui::InputFloat("R/G min##rg_min", &slot.rgb.rgMin, 0.1f, 1.0f, "%.2f");
-                changed |= ImGui::InputFloat("R/G max##rg_max", &slot.rgb.rgMax, 0.1f, 1.0f, "%.2f");
-                changed |= ImGui::InputFloat("R/B min##rb_min", &slot.rgb.rbMin, 0.1f, 1.0f, "%.2f");
-                changed |= ImGui::InputFloat("R/B max##rb_max", &slot.rgb.rbMax, 0.1f, 1.0f, "%.2f");
+                changed |= ImGui::InputFloat("r min##chroma_r_min", &slot.rgb.rMin, 0.01f, 0.1f, "%.2f");
+                changed |= ImGui::InputFloat("r max##chroma_r_max", &slot.rgb.rMax, 0.01f, 0.1f, "%.2f");
+                changed |= ImGui::InputFloat("g min##chroma_g_min", &slot.rgb.gMin, 0.01f, 0.1f, "%.2f");
+                changed |= ImGui::InputFloat("g max##chroma_g_max", &slot.rgb.gMax, 0.01f, 0.1f, "%.2f");
+                changed |= ImGui::InputFloat("Saturation min##chroma_sat", &slot.rgb.satMin, 0.01f, 0.1f, "%.2f");
                 changed |= ImGui::InputInt("Brightness min##rgb_vmin", &slot.rgb.vMin, 1, 10);
                 if (changed)
                 {
-                    // Keep ratios non-negative; brightness floor in [0,255].
-                    slot.rgb.rgMin = std::max(0.0f, slot.rgb.rgMin);
-                    slot.rgb.rgMax = std::max(0.0f, slot.rgb.rgMax);
-                    slot.rgb.rbMin = std::max(0.0f, slot.rgb.rbMin);
-                    slot.rgb.rbMax = std::max(0.0f, slot.rgb.rbMax);
+                    // Chromaticity windows and saturation floor live in [0,1]; brightness in [0,255].
+                    slot.rgb.rMin = std::clamp(slot.rgb.rMin, 0.0f, 1.0f);
+                    slot.rgb.rMax = std::clamp(slot.rgb.rMax, 0.0f, 1.0f);
+                    slot.rgb.gMin = std::clamp(slot.rgb.gMin, 0.0f, 1.0f);
+                    slot.rgb.gMax = std::clamp(slot.rgb.gMax, 0.0f, 1.0f);
+                    slot.rgb.satMin = std::clamp(slot.rgb.satMin, 0.0f, 1.0f);
                     slot.rgb.vMin = std::clamp(slot.rgb.vMin, 0, 255);
                     state.markersDirty = true;
                 }

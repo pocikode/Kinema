@@ -1,6 +1,7 @@
 #include "modules/RGBRatioMarkerDetector.h"
 
 #include <algorithm>
+#include <cmath>
 #include <opencv2/imgproc.hpp>
 
 void RGBRatioMarkerDetector::SetRanges(const std::vector<RGBRatioRange> &ranges)
@@ -46,7 +47,7 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
 
     // Area floor mirrors HSV's 500px full-res threshold, scaled to pooled grid.
     const double areaFloor = std::max(1.0, 500.0 / (static_cast<double>(pool) * pool));
-    constexpr float kEps = 1e-3f;
+    constexpr float kThird = 1.0f / 3.0f;
 
     for (size_t ri = 0; ri < m_ranges.size(); ++ri)
     {
@@ -68,12 +69,22 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
                 const float b = row[x][0];
                 const float g = row[x][1];
                 const float r = row[x][2];
-                if (std::max({b, g, r}) <= static_cast<float>(range.vMin))
+                const float total = r + g + b;
+                if (total < 1e-5f)
                     continue;
+                if (total / 3.0f <= static_cast<float>(range.vMin))
+                    continue; // too dark
 
-                const float rg = r / (g + kEps);
-                const float rb = r / (b + kEps);
-                if (rg >= range.rgMin && rg <= range.rgMax && rb >= range.rbMin && rb <= range.rbMax)
+                const float rn = r / total;
+                const float gn = g / total;
+                const float bn = b / total;
+                // Saturation: how far the chromaticity sits from neutral (1/3,1/3,1/3).
+                const float sat =
+                    std::max({std::fabs(rn - kThird), std::fabs(gn - kThird), std::fabs(bn - kThird)});
+                if (sat < range.satMin)
+                    continue; // too gray/washed out
+
+                if (rn >= range.rMin && rn <= range.rMax && gn >= range.gMin && gn <= range.gMax)
                     mrow[x] = 255;
             }
         }

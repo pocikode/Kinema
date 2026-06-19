@@ -5,9 +5,10 @@
 
 #include <vector>
 
-// Ratio-based color blob detector. The frame is average-pooled (downsampled by
-// block averaging) and each pooled pixel is classified by its R/G and R/B
-// channel ratios. Each configured RGBRatioRange maps to one output observation,
+// Chromaticity-based color blob detector. The frame is average-pooled
+// (downsampled by block averaging) and each pooled pixel is classified by its
+// normalized chromaticity rn = R/(R+G+B), gn = G/(R+G+B), gated on brightness
+// and saturation. Each configured RGBRatioRange maps to one output observation,
 // tagged with that range's index (marker identity = the color it matched).
 class RGBRatioMarkerDetector : public IMarkerDetector
 {
