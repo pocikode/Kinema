@@ -380,7 +380,20 @@ void UIManager::DrawDetectorSection(UIState &state)
     ImGui::Text("Jitter Filter");
     ImGui::SliderFloat("Smoothing", &state.markerSmoothing, 0.0f, 1.0f, "%.2f");
     ImGui::SliderFloat("Deadzone", &state.markerDeadzone, 0.0f, 0.05f, "%.3f");
+    ImGui::SliderFloat("Occlusion hold", &state.occlusionHoldSec, 0.0f, 1.0f, "%.2f s");
     ImGui::SliderFloat("Arm forward", &state.armForward, -1.0f, 2.0f, "%.2f");
+    ImGui::Spacing();
+
+    ImGui::Text("Depth");
+    if (ImGui::InputFloat("Ref distance##depth_dist", &state.depthRefDist, 0.1f, 1.0f, "%.2f"))
+        state.depthRefDist = std::max(0.01f, state.depthRefDist);
+    if (ImGui::InputFloat("Ref area##depth_area", &state.depthRefArea, 100.0f, 1000.0f, "%.0f px"))
+        state.depthRefArea = std::max(1.0f, state.depthRefArea);
+    SlotCombo("Calib marker##depth_slot", &state.depthCalibSlot, state.markers, state.markers.size());
+    if (ImGui::Button("Calibrate from marker##depth_calib"))
+        state.calibrateDepthRequested = true;
+    ImGui::SameLine();
+    ImGui::TextDisabled("(stand at ref distance)");
     ImGui::Spacing();
 }
 
@@ -471,18 +484,34 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
 
             int observationId = static_cast<int>(i);
             bool matched = false;
+            bool held = false;
             for (const auto &o : observations)
                 if (o.id == observationId)
                 {
                     matched = true;
+                    held = o.predicted;
                     break;
                 }
             ImGui::SameLine();
-            ImGui::TextColored(matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-                               matched ? "detected" : "—");
+            if (held)
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "held");
+            else
+                ImGui::TextColored(matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                   matched ? "detected" : "—");
 
             ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
-            if (state.detectionMode == DetectionMode::HSV)
+
+            // Color pairing: a follower slot has no range of its own — it is the
+            // second-largest blob of the paired slot's range (left/right resolved
+            // by the assigner), so its color sliders are hidden.
+            if (SlotCombo("Pair with (shares color)##pair_src", &slot.pairSourceSlot, state.markers, i))
+                state.markersDirty = true;
+
+            if (slot.pairSourceSlot >= 0)
+            {
+                ImGui::TextDisabled("(uses color range of slot %d — second blob)", slot.pairSourceSlot);
+            }
+            else if (state.detectionMode == DetectionMode::HSV)
             {
                 bool changed = false;
                 changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);

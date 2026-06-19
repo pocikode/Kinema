@@ -2,6 +2,7 @@
 #include <geni.h>
 #include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
+#include "modules/MarkerAssigner.h"
 #include "modules/MarkerDetection.h"
 #include "modules/MarkerStabilizer.h"
 #include "modules/MotionRecorder.h"
@@ -35,6 +36,7 @@ class Application : public Geni::Application
     UIManager m_uiManager;
     UIState m_uiState;
     SkeletonDriver m_skelDriver;
+    MarkerAssigner m_assigner;
     MarkerStabilizer m_stabilizer;
 
     // Scene objects (non-owning pointers — owned by Scene)
@@ -56,8 +58,4 @@ class Application : public Geni::Application
     float m_playbackTime = 0.0f;
     bool m_playback = false;
     float m_cameraRetryTimer = 0.0f;
-
-    // Calibration for 2D→3D mapping
-    float m_depthRefDist = 2.0f;
-    float m_depthRefArea = 10000.0f;
 };

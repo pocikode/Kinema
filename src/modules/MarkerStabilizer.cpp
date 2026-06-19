@@ -3,7 +3,7 @@
 #include <glm/geometric.hpp>
 #include <unordered_set>
 
-void MarkerStabilizer::Filter(std::vector<MarkerObservation> &obs)
+void MarkerStabilizer::Filter(std::vector<MarkerObservation> &obs, float deltaTime)
 {
     std::unordered_set<int> seen;
     seen.reserve(obs.size());
@@ -20,11 +20,18 @@ void MarkerStabilizer::Filter(std::vector<MarkerObservation> &obs)
         }
 
         State &s = it->second;
+        glm::vec2 prevCentroid = s.centroid;
 
         // Centroid: hold through the deadzone, else EMA toward raw.
         if (glm::distance(o.centroidNorm, s.centroid) > deadzone)
             s.centroid = glm::mix(s.centroid, o.centroidNorm, alpha);
         o.centroidNorm = s.centroid;
+
+        // Track velocity of the filtered centroid (EMA-smoothed like the position)
+        // so an occluded marker can coast along its last motion.
+        if (deltaTime > 0.0f)
+            s.velocity = glm::mix(s.velocity, (s.centroid - prevCentroid) / deltaTime, alpha);
+        s.timeSinceSeen = 0.0f;
 
         // Area: same gate, deadzone scaled relative to the current value so it tracks
         // across depth ranges instead of being a fixed pixel count.
@@ -34,9 +41,34 @@ void MarkerStabilizer::Filter(std::vector<MarkerObservation> &obs)
         o.areaPixels = s.area;
     }
 
-    // Prune markers that dropped out so they re-seed cleanly on return.
+    // Markers that dropped out: extrapolate along the last velocity, easing to a
+    // stop at holdSec (confidence ramp), then prune so they re-seed cleanly on return.
     for (auto it = m_state.begin(); it != m_state.end();)
-        it = seen.count(it->first) ? std::next(it) : m_state.erase(it);
+    {
+        if (seen.count(it->first))
+        {
+            ++it;
+            continue;
+        }
+        State &s = it->second;
+        s.timeSinceSeen += deltaTime;
+        if (holdSec <= 0.0f || s.timeSinceSeen > holdSec)
+        {
+            it = m_state.erase(it);
+            continue;
+        }
+
+        float confidence = 1.0f - s.timeSinceSeen / holdSec;
+        s.centroid += s.velocity * deltaTime * confidence;
+
+        MarkerObservation held;
+        held.id = it->first;
+        held.predicted = true;
+        held.centroidNorm = s.centroid;
+        held.areaPixels = s.area; // hold area: extrapolating it would add depth noise
+        obs.push_back(held);
+        ++it;
+    }
 }
 
 void MarkerStabilizer::Reset()

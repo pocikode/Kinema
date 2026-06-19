@@ -39,6 +39,11 @@ struct MarkerSlot
     // Application::RebuildBindingsFromState.
     int upperArmMarkerSlot = -1;
     int foreArmMarkerSlot = -1;
+
+    // >=0: this slot is the second marker of a color pair — it has no range of
+    // its own; it is resolved as the second-largest blob of the referenced
+    // slot's range (left/right disambiguated by MarkerAssigner). -1 = standalone.
+    int pairSourceSlot = -1;
 };
 
 // Which detector backend drives all marker slots.
@@ -61,9 +66,17 @@ struct UIState
     bool showPooledFrame = false;    // show pooled frame instead of raw in camera feed
 
     // Marker jitter filter (deadzone + EMA on 2D centroids); live-tunable
-    float markerSmoothing = 0.35f; // EMA factor 0..1 (higher = snappier, less smooth)
-    float markerDeadzone = 0.012f; // normalized centroid radius held as no-move
-    float armForward = 0.0f;       // constant forward lean of IK arms (world units)
+    float markerSmoothing = 0.35f;   // EMA factor 0..1 (higher = snappier, less smooth)
+    float markerDeadzone = 0.012f;   // normalized centroid radius held as no-move
+    float occlusionHoldSec = 0.3f;   // extrapolate lost markers this long; 0 = off
+    float armForward = 0.0f;         // constant forward lean of IK arms (world units)
+
+    // 2D→3D depth reference: a blob of depthRefArea pixels sits depthRefDist away.
+    // "Calibrate" captures the chosen slot's current blob area as the reference.
+    float depthRefDist = 2.0f;
+    float depthRefArea = 10000.0f;
+    int depthCalibSlot = 0;
+    bool calibrateDepthRequested = false;
 
     // Marker config persistence (HSV bands + bindings reuse across sessions)
     char markerConfigPath[512] = "markers.json";

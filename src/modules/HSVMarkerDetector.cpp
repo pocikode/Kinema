@@ -1,5 +1,6 @@
 #include "modules/HSVMarkerDetector.h"
 
+#include <algorithm>
 #include <opencv2/imgproc.hpp>
 
 void HSVMarkerDetector::SetRanges(const std::vector<HSVRange> &ranges)
@@ -29,6 +30,11 @@ std::vector<MarkerObservation> HSVMarkerDetector::Detect()
 
     for (size_t ri = 0; ri < m_ranges.size(); ++ri)
     {
+        const int want = BlobCount(ri);
+        if (want <= 0)
+        {
+            continue; // paired follower slot: resolved from its primary's range
+        }
         const auto &range = m_ranges[ri];
 
         cv::inRange(m_frameHSV, cv::Scalar(range.hMin, range.sMin, range.vMin),
@@ -51,38 +57,41 @@ std::vector<MarkerObservation> HSVMarkerDetector::Detect()
             continue;
         }
 
-        // Keep only the largest blob per color range — single marker per color.
+        // Keep the `want` largest blobs per color range (paired slots use two).
         // Area threshold keeps ambient-noise blobs (lighting speckle, shadows) out
         // of the observation stream so unbound downstream bones don't jitter.
-        const std::vector<cv::Point> *best = nullptr;
-        double bestArea = 500.0;
+        std::vector<std::pair<double, const std::vector<cv::Point> *>> candidates;
         for (const auto &c : contours)
         {
             double area = cv::contourArea(c);
-            if (area > bestArea)
+            if (area > 500.0)
             {
-                bestArea = area;
-                best = &c;
+                candidates.push_back({area, &c});
             }
         }
-        if (!best)
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const auto &a, const auto &b) { return a.first > b.first; });
+        if (candidates.size() > static_cast<size_t>(want))
         {
-            continue;
+            candidates.resize(static_cast<size_t>(want));
         }
 
-        cv::Moments m = cv::moments(*best);
-        if (m.m00 == 0.0)
+        for (const auto &[area, contour] : candidates)
         {
-            continue;
-        }
+            cv::Moments m = cv::moments(*contour);
+            if (m.m00 == 0.0)
+            {
+                continue;
+            }
 
-        MarkerObservation obs;
-        obs.id = static_cast<int>(ri);
-        obs.centroidNorm = {static_cast<float>(m.m10 / m.m00) / static_cast<float>(m_width),
-                            static_cast<float>(m.m01 / m.m00) / static_cast<float>(m_height)};
-        obs.areaPixels = static_cast<float>(bestArea);
-        obs.boundingBox = cv::boundingRect(*best);
-        observations.push_back(obs);
+            MarkerObservation obs;
+            obs.id = static_cast<int>(ri);
+            obs.centroidNorm = {static_cast<float>(m.m10 / m.m00) / static_cast<float>(m_width),
+                                static_cast<float>(m.m01 / m.m00) / static_cast<float>(m_height)};
+            obs.areaPixels = static_cast<float>(area);
+            obs.boundingBox = cv::boundingRect(*contour);
+            observations.push_back(obs);
+        }
     }
 
     return observations;

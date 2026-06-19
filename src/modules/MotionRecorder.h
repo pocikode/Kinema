@@ -42,6 +42,11 @@ class MotionRecorder
     // in the keyframe but missing from the skeleton are silently skipped.
     static void ApplyKeyframe(const Keyframe &keyframe, Geni::Skeleton &skeleton);
 
+    // Like ApplyKeyframe but blends between two adjacent keyframes (t in [0,1]:
+    // lerp position/scale, slerp rotation) so playback doesn't stair-step at
+    // capture rates below the render rate. Bones missing from `b` use `a` verbatim.
+    static void ApplyInterpolated(const Keyframe &a, const Keyframe &b, float t, Geni::Skeleton &skeleton);
+
     const std::vector<Keyframe> &GetKeyframes() const;
     int GetKeyframeCount() const;
     float GetDuration() const;

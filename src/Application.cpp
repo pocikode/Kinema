@@ -269,15 +269,27 @@ void Application::RebuildBindingsFromState()
 
     m_skelDriver.SetBindings(std::move(bindings));
     m_skelDriver.SetIKChains(std::move(chains));
+
+    // Derive color pairs for the assigner. A follower's pairSourceSlot must point
+    // at a valid standalone (non-follower) slot; anything else degrades to -1.
+    std::vector<MarkerPair> pairs;
+    for (size_t i = 0; i < m_uiState.markers.size(); ++i)
+    {
+        int src = clampSlot(m_uiState.markers[i].pairSourceSlot);
+        if (src < 0 || src == static_cast<int>(i) || m_uiState.markers[src].pairSourceSlot >= 0)
+            continue;
+        pairs.push_back({src, static_cast<int>(i)});
+    }
+    m_assigner.SetPairs(std::move(pairs));
 }
 
 glm::vec3 Application::Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels)
 {
     float worldX = (centroidNorm.x - 0.5f) * 2.0f;
     float worldY = -(centroidNorm.y - 0.5f) * 2.0f;
-    float worldZ = m_depthRefDist * glm::sqrt(m_depthRefArea / (areaPixels + 1.0f));
-    worldX *= (worldZ / m_depthRefDist);
-    worldY *= (worldZ / m_depthRefDist);
+    float worldZ = m_uiState.depthRefDist * glm::sqrt(m_uiState.depthRefArea / (areaPixels + 1.0f));
+    worldX *= (worldZ / m_uiState.depthRefDist);
+    worldY *= (worldZ / m_uiState.depthRefDist);
     return glm::vec3(worldX, worldY, worldZ);
 }
 
@@ -319,13 +331,14 @@ void Application::Update(float deltaTime)
     if (m_uiState.detectionModeDirty)
     {
         RebuildDetectorFromState(); // swap HSV <-> RGB-ratio backend
+        m_assigner.Reset();
         m_stabilizer.Reset();
         m_uiState.detectionModeDirty = false;
     }
     if (m_uiState.markersDirty)
     {
-        RebuildBindingsFromState();
-        m_stabilizer.Reset(); // slot ids may have shuffled; drop stale per-id state
+        RebuildBindingsFromState(); // also re-derives color pairs (resets the assigner)
+        m_stabilizer.Reset();       // slot ids may have shuffled; drop stale per-id state
         m_uiState.markersDirty = false;
     }
 
@@ -347,6 +360,22 @@ void Application::Update(float deltaTime)
             ranges.push_back(slot.rgb);
         rgb->SetRanges(ranges);
         rgb->SetPoolSize(m_uiState.rgbPoolSize);
+    }
+    if (m_detector)
+    {
+        // Paired follower slots have no range of their own: skip them (0) and pull
+        // two blobs from their primary's range instead.
+        std::vector<int> counts(m_uiState.markers.size(), 1);
+        for (size_t i = 0; i < m_uiState.markers.size(); ++i)
+        {
+            int src = m_uiState.markers[i].pairSourceSlot;
+            if (src >= 0 && src < static_cast<int>(counts.size()))
+            {
+                counts[i] = 0;
+                counts[src] = 2;
+            }
+        }
+        m_detector->SetBlobCounts(counts);
     }
 
     std::vector<MarkerObservation> observations;
@@ -373,12 +402,31 @@ void Application::Update(float deltaTime)
         }
     }
 
+    // Resolve paired same-color blobs to unique slot ids before any per-id consumer.
+    m_assigner.Assign(observations);
+
     // Deadzone + EMA before anything consumes the observations, so marker jitter
     // doesn't sway the rig. Knobs are live-tunable from the UI.
     m_stabilizer.alpha = m_uiState.markerSmoothing;
     m_stabilizer.deadzone = m_uiState.markerDeadzone;
-    m_stabilizer.Filter(observations);
+    m_stabilizer.holdSec = m_uiState.occlusionHoldSec;
+    m_stabilizer.Filter(observations, deltaTime);
     m_skelDriver.armForward = m_uiState.armForward;
+
+    if (m_uiState.calibrateDepthRequested)
+    {
+        // Capture the chosen slot's current blob area as the depth reference: the
+        // user stands at depthRefDist and presses the button.
+        for (const auto &o : observations)
+        {
+            if (o.id == m_uiState.depthCalibSlot && !o.predicted)
+            {
+                m_uiState.depthRefArea = o.areaPixels;
+                break;
+            }
+        }
+        m_uiState.calibrateDepthRequested = false;
+    }
 
     if (m_playback && m_riggedSkeleton)
     {
@@ -394,7 +442,19 @@ void Application::Update(float deltaTime)
             size_t idx = 0;
             while (idx + 1 < keyframes.size() && keyframes[idx + 1].timestamp <= m_playbackTime)
                 ++idx;
-            MotionRecorder::ApplyKeyframe(keyframes[idx], *m_riggedSkeleton);
+            if (idx + 1 < keyframes.size())
+            {
+                // Blend toward the next keyframe so playback doesn't stair-step
+                // when the capture rate was below the render rate.
+                double span = keyframes[idx + 1].timestamp - keyframes[idx].timestamp;
+                float t = span > 0.0 ? static_cast<float>((m_playbackTime - keyframes[idx].timestamp) / span)
+                                     : 0.0f;
+                MotionRecorder::ApplyInterpolated(keyframes[idx], keyframes[idx + 1], t, *m_riggedSkeleton);
+            }
+            else
+            {
+                MotionRecorder::ApplyKeyframe(keyframes[idx], *m_riggedSkeleton);
+            }
             if (m_playbackTime >= keyframes.back().timestamp)
                 m_playback = false;
         }
@@ -446,12 +506,14 @@ void Application::Update(float deltaTime)
     }
     if (m_uiState.exportMarkersRequested)
     {
-        SaveMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers);
+        SaveMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist,
+                         m_uiState.depthRefArea);
         m_uiState.exportMarkersRequested = false;
     }
     if (m_uiState.importMarkersRequested)
     {
-        if (LoadMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers))
+        if (LoadMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist,
+                             m_uiState.depthRefArea))
             m_uiState.markersDirty = true; // re-validate bindings + resync detector ranges
         m_uiState.importMarkersRequested = false;
     }

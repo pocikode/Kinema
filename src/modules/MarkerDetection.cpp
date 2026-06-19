@@ -20,6 +20,16 @@ void IMarkerDetector::Destroy()
     }
 }
 
+void IMarkerDetector::SetBlobCounts(const std::vector<int> &counts)
+{
+    m_blobCounts = counts;
+}
+
+int IMarkerDetector::BlobCount(size_t rangeIndex) const
+{
+    return rangeIndex < m_blobCounts.size() ? m_blobCounts[rangeIndex] : 1;
+}
+
 bool IMarkerDetector::GrabFrame()
 {
     if (!m_cap.isOpened())

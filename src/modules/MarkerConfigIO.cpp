@@ -19,7 +19,8 @@ void CopyToBuf(char *dst, size_t cap, const std::string &src)
 }
 } // namespace
 
-bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &markers)
+bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &markers, float depthRefDist,
+                      float depthRefArea)
 {
     try
     {
@@ -39,9 +40,12 @@ bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &ma
                 {"ikMidBone", s.ikMidBone},
                 {"upperArmMarkerSlot", s.upperArmMarkerSlot},
                 {"foreArmMarkerSlot", s.foreArmMarkerSlot},
+                {"pairSourceSlot", s.pairSourceSlot},
             });
         }
-        json j = {{"version", kSchemaVersion}, {"markers", arr}};
+        json j = {{"version", kSchemaVersion},
+                  {"markers", arr},
+                  {"depth", {{"dist", depthRefDist}, {"area", depthRefArea}}}};
 
         std::ofstream f(path);
         if (!f)
@@ -56,7 +60,8 @@ bool SaveMarkerConfig(const std::string &path, const std::vector<MarkerSlot> &ma
     }
 }
 
-bool LoadMarkerConfig(const std::string &path, std::vector<MarkerSlot> &markers)
+bool LoadMarkerConfig(const std::string &path, std::vector<MarkerSlot> &markers, float &depthRefDist,
+                      float &depthRefArea)
 {
     try
     {
@@ -117,11 +122,20 @@ bool LoadMarkerConfig(const std::string &path, std::vector<MarkerSlot> &markers)
             CopyToBuf(s.ikMidBone, sizeof(s.ikMidBone), e.value("ikMidBone", std::string("")));
             s.upperArmMarkerSlot = e.value("upperArmMarkerSlot", -1);
             s.foreArmMarkerSlot = e.value("foreArmMarkerSlot", -1);
+            s.pairSourceSlot = e.value("pairSourceSlot", -1);
 
             loaded.push_back(s);
         }
 
         markers = std::move(loaded);
+
+        // Optional (added later): depth reference. Missing keeps current values.
+        if (j.contains("depth"))
+        {
+            const auto &d = j.at("depth");
+            depthRefDist = d.value("dist", depthRefDist);
+            depthRefArea = d.value("area", depthRefArea);
+        }
         return true;
     }
     catch (const std::exception &e)

@@ -70,6 +70,32 @@ void MotionRecorder::ApplyKeyframe(const Keyframe &keyframe, Geni::Skeleton &ske
     }
 }
 
+void MotionRecorder::ApplyInterpolated(const Keyframe &a, const Keyframe &b, float t, Geni::Skeleton &skeleton)
+{
+    for (const auto &entry : a.bonePoses)
+    {
+        int index = skeleton.FindJoint(entry.first);
+        if (index < 0)
+            continue;
+        Geni::GameObject *node = skeleton.GetJointNode(index);
+        if (!node)
+            continue;
+
+        auto itB = b.bonePoses.find(entry.first);
+        if (itB == b.bonePoses.end())
+        {
+            node->SetPosition(entry.second.position);
+            node->SetRotation(entry.second.rotation);
+            node->SetScale(entry.second.scale);
+            continue;
+        }
+
+        node->SetPosition(glm::mix(entry.second.position, itB->second.position, t));
+        node->SetRotation(glm::slerp(entry.second.rotation, itB->second.rotation, t));
+        node->SetScale(glm::mix(entry.second.scale, itB->second.scale, t));
+    }
+}
+
 const std::vector<Keyframe> &MotionRecorder::GetKeyframes() const
 {
     return m_keyframes;

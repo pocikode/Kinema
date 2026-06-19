@@ -14,6 +14,7 @@ struct MarkerObservation
     glm::vec2 centroidNorm = {0.0f, 0.0f};
     float areaPixels = 0.0f;
     cv::Rect boundingBox;
+    bool predicted = false; // synthesized by the stabilizer during occlusion hold
 
     bool hasOrientation = false;
     glm::quat orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -31,6 +32,11 @@ class IMarkerDetector
 
     virtual std::vector<MarkerObservation> Detect() = 0;
 
+    // Per range index, how many blobs to emit: 0 = skip the range entirely
+    // (paired follower slot), 1 = largest only (default), 2 = two largest.
+    // Indices past the end of the vector behave as 1.
+    void SetBlobCounts(const std::vector<int> &counts);
+
     const cv::Mat &GetLastFrame() const;
     const cv::Mat &GetLastMask() const;
     bool IsOpen() const;
@@ -39,6 +45,9 @@ class IMarkerDetector
 
   protected:
     bool GrabFrame();
+    int BlobCount(size_t rangeIndex) const;
+
+    std::vector<int> m_blobCounts;
 
     cv::VideoCapture m_cap;
     cv::Mat m_frame;

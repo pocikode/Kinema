@@ -50,6 +50,11 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
 
     for (size_t ri = 0; ri < m_ranges.size(); ++ri)
     {
+        const int want = BlobCount(ri);
+        if (want <= 0)
+        {
+            continue; // paired follower slot: resolved from its primary's range
+        }
         const auto &range = m_ranges[ri];
 
         m_rangeMask = cv::Mat::zeros(m_pooled.size(), CV_8UC1);
@@ -84,39 +89,42 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
             continue;
         }
 
-        // Keep only the largest blob per color range — single marker per color.
-        const std::vector<cv::Point> *best = nullptr;
-        double bestArea = areaFloor;
+        // Keep the `want` largest blobs per color range (paired slots use two).
+        std::vector<std::pair<double, const std::vector<cv::Point> *>> candidates;
         for (const auto &c : contours)
         {
             double area = cv::contourArea(c);
-            if (area > bestArea)
+            if (area > areaFloor)
             {
-                bestArea = area;
-                best = &c;
+                candidates.push_back({area, &c});
             }
         }
-        if (!best)
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const auto &a, const auto &b) { return a.first > b.first; });
+        if (candidates.size() > static_cast<size_t>(want))
         {
-            continue;
+            candidates.resize(static_cast<size_t>(want));
         }
 
-        cv::Moments m = cv::moments(*best);
-        if (m.m00 == 0.0)
+        for (const auto &[area, contour] : candidates)
         {
-            continue;
-        }
+            cv::Moments m = cv::moments(*contour);
+            if (m.m00 == 0.0)
+            {
+                continue;
+            }
 
-        // Centroid normalized by pooled dims keeps the [0..1] space identical to HSV.
-        MarkerObservation obs;
-        obs.id = static_cast<int>(ri);
-        obs.centroidNorm = {static_cast<float>(m.m10 / m.m00) / static_cast<float>(pw),
-                            static_cast<float>(m.m01 / m.m00) / static_cast<float>(ph)};
-        // Scale area back to full-res pixels so the depth proxy matches HSV.
-        obs.areaPixels = static_cast<float>(bestArea) * static_cast<float>(pool) * pool;
-        cv::Rect r = cv::boundingRect(*best);
-        obs.boundingBox = cv::Rect(r.x * pool, r.y * pool, r.width * pool, r.height * pool);
-        observations.push_back(obs);
+            // Centroid normalized by pooled dims keeps the [0..1] space identical to HSV.
+            MarkerObservation obs;
+            obs.id = static_cast<int>(ri);
+            obs.centroidNorm = {static_cast<float>(m.m10 / m.m00) / static_cast<float>(pw),
+                                static_cast<float>(m.m01 / m.m00) / static_cast<float>(ph)};
+            // Scale area back to full-res pixels so the depth proxy matches HSV.
+            obs.areaPixels = static_cast<float>(area) * static_cast<float>(pool) * pool;
+            cv::Rect r = cv::boundingRect(*contour);
+            obs.boundingBox = cv::Rect(r.x * pool, r.y * pool, r.width * pool, r.height * pool);
+            observations.push_back(obs);
+        }
     }
 
     cv::resize(poolMask, m_mask, m_frame.size(), 0, 0, cv::INTER_NEAREST);
