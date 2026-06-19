@@ -8,61 +8,12 @@
 #include <portable-file-dialogs.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 
 namespace
 {
-// OpenCV HSV (H: 0-179, S/V: 0-255) → linear RGB (0-1).
-void OpenCvHsvToRgb(int h, int s, int v, float outRgb[3])
-{
-    float H = ((h % 180 + 180) % 180) * 2.0f / 360.0f; // map to [0,1)
-    float S = std::clamp(s / 255.0f, 0.0f, 1.0f);
-    float V = std::clamp(v / 255.0f, 0.0f, 1.0f);
-    float c = V * S;
-    float Hp = H * 6.0f;
-    float x = c * (1.0f - std::fabs(std::fmod(Hp, 2.0f) - 1.0f));
-    float r = 0.0f, g = 0.0f, b = 0.0f;
-    if (Hp < 1.0f)      { r = c; g = x; }
-    else if (Hp < 2.0f) { r = x; g = c; }
-    else if (Hp < 3.0f) { g = c; b = x; }
-    else if (Hp < 4.0f) { g = x; b = c; }
-    else if (Hp < 5.0f) { r = x; b = c; }
-    else                { r = c; b = x; }
-    float m = V - c;
-    outRgb[0] = r + m;
-    outRgb[1] = g + m;
-    outRgb[2] = b + m;
-}
-
-// Linear RGB (0-1) → OpenCV H (0-179). Returns 0 for grayscale.
-int RgbToOpenCvHue(const float rgb[3])
-{
-    float r = rgb[0], g = rgb[1], b = rgb[2];
-    float maxC = std::max({r, g, b});
-    float minC = std::min({r, g, b});
-    float d = maxC - minC;
-    if (d < 1e-5f)
-        return 0;
-    float H = 0.0f;
-    if (maxC == r)      H = std::fmod((g - b) / d + 6.0f, 6.0f);
-    else if (maxC == g) H = (b - r) / d + 2.0f;
-    else                H = (r - g) / d + 4.0f;
-    H *= 60.0f; // degrees 0-360
-    int Hcv = static_cast<int>(H * 0.5f); // 0-179
-    return ((Hcv % 180) + 180) % 180;
-}
-
-// Midpoint of an OpenCV hue band, handling the 179 → 0 wrap.
-int HueCenter(int hMin, int hMax)
-{
-    if (hMin <= hMax)
-        return (hMin + hMax) / 2;
-    int sum = hMin + hMax + 180; // unwrap hMax past 180
-    return (sum / 2) % 180;
-}
 constexpr ImGuiWindowFlags kSidebarFlags = ImGuiWindowFlags_NoMove |
                                            ImGuiWindowFlags_NoResize |
                                            ImGuiWindowFlags_NoCollapse;
@@ -468,17 +419,7 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             if (ImGui::ColorEdit3("Color##slot_color", slot.overlayColor,
                                   ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
             {
-                // In HSV mode the picker drives the detection band: derive H from
-                // the chosen RGB and re-center the slot's H window around it.
-                // S/V stay user-controlled via their own sliders. In RGB-ratio
-                // mode the swatch is overlay-only (ratios are set by their sliders).
-                if (state.detectionMode == DetectionMode::HSV)
-                {
-                    int H = RgbToOpenCvHue(slot.overlayColor);
-                    const int halfBand = 7;
-                    slot.hsv.hMin = ((H - halfBand) % 180 + 180) % 180;
-                    slot.hsv.hMax = (H + halfBand) % 180;
-                }
+                // The overlay color is independent of the active detection range.
                 state.markersDirty = true;
             }
 
@@ -529,16 +470,7 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
                     changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
                 }
                 if (changed)
-                {
-                    // Keep the overlay swatch visually honest: reflect the band's
-                    // center hue + center saturation/value so the picker always
-                    // shows what the detector is looking for.
-                    int hc = HueCenter(slot.hsv.hMin, slot.hsv.hMax);
-                    int sc = (slot.hsv.sMin + slot.hsv.sMax) / 2;
-                    int vc = (slot.hsv.vMin + slot.hsv.vMax) / 2;
-                    OpenCvHsvToRgb(hc, sc, vc, slot.overlayColor);
                     state.markersDirty = true;
-                }
             }
             else
             {
