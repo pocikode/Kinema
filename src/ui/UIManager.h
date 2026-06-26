@@ -4,6 +4,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp>
 #include <imgui.h>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -13,10 +14,10 @@
 // How a marker slot drives its bound bone.
 enum class BindingKind
 {
-    Position,         // bone.worldPos = unproject(marker)
-    IKTarget,         // marker is end-effector; ikRoot + ikMid posed via analytical 2-bone IK
-    LookAt,           // bone rotates toward marker; position is never changed (no neck stretch)
-    Hint,             // detected only; not bound to a bone (used as elbow/shoulder reference for an IKTarget slot)
+    Position, // bone.worldPos = unproject(marker)
+    IKTarget, // marker is end-effector; ikRoot + ikMid posed via analytical 2-bone IK
+    LookAt,   // bone rotates toward marker; position is never changed (no neck stretch)
+    Hint,     // detected only; not bound to a bone (used as elbow/shoulder reference for an IKTarget slot)
 };
 
 // One user-configured marker. Matches by slot index.
@@ -59,6 +60,13 @@ struct UIState
     std::vector<MarkerSlot> markers;
     bool markersDirty = false; // set when any slot config changes (bindings, HSV ranges, etc.)
 
+    // Eyedropper: pick a marker's color range by clicking the camera feed. >=0 is
+    // the slot index awaiting a pick; the next click on the feed samples that
+    // pixel and Application derives the slot's HSV/RGB range from it. -1 = idle.
+    int eyedropperSlot = -1;
+    bool eyedropperPickRequested = false;        // set on click; drained by Application
+    glm::vec2 eyedropperPickNorm = {0.0f, 0.0f}; // normalized [0,1] click in the feed
+
     // Detector backend selection
     DetectionMode detectionMode = DetectionMode::HSV;
     bool detectionModeDirty = false; // set when mode changes; triggers detector rebuild
@@ -66,10 +74,10 @@ struct UIState
     bool showPooledFrame = false;    // show pooled frame instead of raw in camera feed
 
     // Marker jitter filter (deadzone + EMA on 2D centroids); live-tunable
-    float markerSmoothing = 0.35f;   // EMA factor 0..1 (higher = snappier, less smooth)
-    float markerDeadzone = 0.012f;   // normalized centroid radius held as no-move
-    float occlusionHoldSec = 0.3f;   // extrapolate lost markers this long; 0 = off
-    float armForward = 0.0f;         // constant forward lean of IK arms (world units)
+    float markerSmoothing = 0.35f; // EMA factor 0..1 (higher = snappier, less smooth)
+    float markerDeadzone = 0.012f; // normalized centroid radius held as no-move
+    float occlusionHoldSec = 0.3f; // extrapolate lost markers this long; 0 = off
+    float armForward = 0.0f;       // constant forward lean of IK arms (world units)
 
     // 2D→3D depth reference: a blob of depthRefArea pixels sits depthRefDist away.
     // "Calibrate" captures the chosen slot's current blob area as the reference.
@@ -101,8 +109,8 @@ struct UIState
     // Export
     int exportFmtIndex = 0;
     int exportFps = 30;
-    char exportDir[512] = "";   // filled by Application::Init ($HOME or cwd)
-    char exportName[128] = "";  // filled by Application::Init (kinema_YYYYMMDD)
+    char exportDir[512] = "";  // filled by Application::Init ($HOME or cwd)
+    char exportName[128] = ""; // filled by Application::Init (kinema_YYYYMMDD)
     bool saveJsonRequested = false;
     bool exportVideoRequested = false;
     bool exportGlbRequested = false;

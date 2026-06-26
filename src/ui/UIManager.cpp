@@ -1,9 +1,9 @@
 #include "ui/UIManager.h"
+#include <GLFW/glfw3.h>
+#include <glm/mat3x3.hpp>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
-#include <GLFW/glfw3.h>
-#include <glm/mat3x3.hpp>
 #include <opencv2/imgproc.hpp>
 #include <portable-file-dialogs.h>
 
@@ -14,16 +14,16 @@
 
 namespace
 {
-constexpr ImGuiWindowFlags kSidebarFlags = ImGuiWindowFlags_NoMove |
-                                           ImGuiWindowFlags_NoResize |
-                                           ImGuiWindowFlags_NoCollapse;
+constexpr ImGuiWindowFlags kSidebarFlags =
+    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 
 constexpr float kSidebarW = 320.0f;
 constexpr float kMenuBarH = 20.0f;
 constexpr float kStatusBarH = 24.0f;
 
-const char *const kBindingLabels[] = {"Position", "IK Target (2-bone)", "Look At (rotation only)",
-                                      "Hint (detect only)"};
+const char *const kBindingLabels[] = {
+    "Position", "IK Target (2-bone)", "Look At (rotation only)", "Hint (detect only)"
+};
 
 // Tokyo Night palette — https://github.com/enkia/tokyo-night-vscode-theme
 void ApplyTokyoNightTheme()
@@ -31,75 +31,109 @@ void ApplyTokyoNightTheme()
     ImGuiStyle &style = ImGui::GetStyle();
     ImVec4 *c = style.Colors;
 
-    const ImVec4 bg       = ImVec4(0.102f, 0.106f, 0.149f, 1.00f); // #1a1b26
-    const ImVec4 bgDark   = ImVec4(0.086f, 0.086f, 0.118f, 1.00f); // #16161e
-    const ImVec4 bgHigh   = ImVec4(0.161f, 0.180f, 0.259f, 1.00f); // #292e42
-    const ImVec4 surface  = ImVec4(0.231f, 0.259f, 0.380f, 1.00f); // #3b4261
+    const ImVec4 bg = ImVec4(0.102f, 0.106f, 0.149f, 1.00f);       // #1a1b26
+    const ImVec4 bgDark = ImVec4(0.086f, 0.086f, 0.118f, 1.00f);   // #16161e
+    const ImVec4 bgHigh = ImVec4(0.161f, 0.180f, 0.259f, 1.00f);   // #292e42
+    const ImVec4 surface = ImVec4(0.231f, 0.259f, 0.380f, 1.00f);  // #3b4261
     const ImVec4 terminal = ImVec4(0.255f, 0.282f, 0.408f, 1.00f); // #414868
-    const ImVec4 fg       = ImVec4(0.753f, 0.792f, 0.961f, 1.00f); // #c0caf5
-    const ImVec4 fgDark   = ImVec4(0.663f, 0.694f, 0.839f, 1.00f); // #a9b1d6
-    const ImVec4 comment  = ImVec4(0.337f, 0.373f, 0.537f, 1.00f); // #565f89
-    const ImVec4 blue     = ImVec4(0.478f, 0.635f, 0.969f, 1.00f); // #7aa2f7
-    const ImVec4 cyan     = ImVec4(0.490f, 0.812f, 1.000f, 1.00f); // #7dcfff
-    const ImVec4 magenta  = ImVec4(0.733f, 0.604f, 0.969f, 1.00f); // #bb9af7
-    const ImVec4 red      = ImVec4(0.969f, 0.463f, 0.557f, 1.00f); // #f7768e
+    const ImVec4 fg = ImVec4(0.753f, 0.792f, 0.961f, 1.00f);       // #c0caf5
+    const ImVec4 fgDark = ImVec4(0.663f, 0.694f, 0.839f, 1.00f);   // #a9b1d6
+    const ImVec4 comment = ImVec4(0.337f, 0.373f, 0.537f, 1.00f);  // #565f89
+    const ImVec4 blue = ImVec4(0.478f, 0.635f, 0.969f, 1.00f);     // #7aa2f7
+    const ImVec4 cyan = ImVec4(0.490f, 0.812f, 1.000f, 1.00f);     // #7dcfff
+    const ImVec4 magenta = ImVec4(0.733f, 0.604f, 0.969f, 1.00f);  // #bb9af7
+    const ImVec4 red = ImVec4(0.969f, 0.463f, 0.557f, 1.00f);      // #f7768e
 
-    c[ImGuiCol_Text]                 = fg;
-    c[ImGuiCol_TextDisabled]         = comment;
-    c[ImGuiCol_WindowBg]             = bg;
-    c[ImGuiCol_ChildBg]              = bg;
-    c[ImGuiCol_PopupBg]              = bgDark;
-    c[ImGuiCol_Border]               = ImVec4(surface.x, surface.y, surface.z, 0.60f);
-    c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg]              = bgDark;
-    c[ImGuiCol_FrameBgHovered]       = bgHigh;
-    c[ImGuiCol_FrameBgActive]        = surface;
-    c[ImGuiCol_TitleBg]              = bgDark;
-    c[ImGuiCol_TitleBgActive]        = bgHigh;
-    c[ImGuiCol_TitleBgCollapsed]     = bgDark;
-    c[ImGuiCol_MenuBarBg]            = bgDark;
-    c[ImGuiCol_ScrollbarBg]          = bgDark;
-    c[ImGuiCol_ScrollbarGrab]        = surface;
+    c[ImGuiCol_Text] = fg;
+    c[ImGuiCol_TextDisabled] = comment;
+    c[ImGuiCol_WindowBg] = bg;
+    c[ImGuiCol_ChildBg] = bg;
+    c[ImGuiCol_PopupBg] = bgDark;
+    c[ImGuiCol_Border] = ImVec4(surface.x, surface.y, surface.z, 0.60f);
+    c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_FrameBg] = bgDark;
+    c[ImGuiCol_FrameBgHovered] = bgHigh;
+    c[ImGuiCol_FrameBgActive] = surface;
+    c[ImGuiCol_TitleBg] = bgDark;
+    c[ImGuiCol_TitleBgActive] = bgHigh;
+    c[ImGuiCol_TitleBgCollapsed] = bgDark;
+    c[ImGuiCol_MenuBarBg] = bgDark;
+    c[ImGuiCol_ScrollbarBg] = bgDark;
+    c[ImGuiCol_ScrollbarGrab] = surface;
     c[ImGuiCol_ScrollbarGrabHovered] = terminal;
-    c[ImGuiCol_ScrollbarGrabActive]  = comment;
-    c[ImGuiCol_CheckMark]            = blue;
-    c[ImGuiCol_SliderGrab]           = blue;
-    c[ImGuiCol_SliderGrabActive]     = cyan;
-    c[ImGuiCol_Button]               = bgHigh;
-    c[ImGuiCol_ButtonHovered]        = surface;
-    c[ImGuiCol_ButtonActive]         = terminal;
-    c[ImGuiCol_Header]               = bgHigh;
-    c[ImGuiCol_HeaderHovered]        = surface;
-    c[ImGuiCol_HeaderActive]         = terminal;
-    c[ImGuiCol_Separator]            = surface;
-    c[ImGuiCol_SeparatorHovered]     = blue;
-    c[ImGuiCol_SeparatorActive]      = cyan;
-    c[ImGuiCol_ResizeGrip]           = surface;
-    c[ImGuiCol_ResizeGripHovered]    = blue;
-    c[ImGuiCol_ResizeGripActive]     = cyan;
-    c[ImGuiCol_Tab]                  = bgDark;
-    c[ImGuiCol_TabHovered]           = surface;
-    c[ImGuiCol_TabActive]            = bgHigh;
-    c[ImGuiCol_TabUnfocused]         = bgDark;
-    c[ImGuiCol_TabUnfocusedActive]   = bgHigh;
-    c[ImGuiCol_PlotLines]            = blue;
-    c[ImGuiCol_PlotLinesHovered]     = cyan;
-    c[ImGuiCol_PlotHistogram]        = magenta;
+    c[ImGuiCol_ScrollbarGrabActive] = comment;
+    c[ImGuiCol_CheckMark] = blue;
+    c[ImGuiCol_SliderGrab] = blue;
+    c[ImGuiCol_SliderGrabActive] = cyan;
+    c[ImGuiCol_Button] = bgHigh;
+    c[ImGuiCol_ButtonHovered] = surface;
+    c[ImGuiCol_ButtonActive] = terminal;
+    c[ImGuiCol_Header] = bgHigh;
+    c[ImGuiCol_HeaderHovered] = surface;
+    c[ImGuiCol_HeaderActive] = terminal;
+    c[ImGuiCol_Separator] = surface;
+    c[ImGuiCol_SeparatorHovered] = blue;
+    c[ImGuiCol_SeparatorActive] = cyan;
+    c[ImGuiCol_ResizeGrip] = surface;
+    c[ImGuiCol_ResizeGripHovered] = blue;
+    c[ImGuiCol_ResizeGripActive] = cyan;
+    c[ImGuiCol_Tab] = bgDark;
+    c[ImGuiCol_TabHovered] = surface;
+    c[ImGuiCol_TabActive] = bgHigh;
+    c[ImGuiCol_TabUnfocused] = bgDark;
+    c[ImGuiCol_TabUnfocusedActive] = bgHigh;
+    c[ImGuiCol_PlotLines] = blue;
+    c[ImGuiCol_PlotLinesHovered] = cyan;
+    c[ImGuiCol_PlotHistogram] = magenta;
     c[ImGuiCol_PlotHistogramHovered] = red;
-    c[ImGuiCol_TextSelectedBg]       = ImVec4(blue.x, blue.y, blue.z, 0.35f);
-    c[ImGuiCol_NavHighlight]         = blue;
-    c[ImGuiCol_DragDropTarget]       = cyan;
+    c[ImGuiCol_TextSelectedBg] = ImVec4(blue.x, blue.y, blue.z, 0.35f);
+    c[ImGuiCol_NavHighlight] = blue;
+    c[ImGuiCol_DragDropTarget] = cyan;
     (void)fgDark;
 
-    style.WindowRounding    = 6.0f;
-    style.FrameRounding     = 4.0f;
-    style.GrabRounding      = 4.0f;
-    style.PopupRounding     = 4.0f;
+    style.WindowRounding = 6.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.PopupRounding = 4.0f;
     style.ScrollbarRounding = 4.0f;
-    style.TabRounding       = 4.0f;
-    style.WindowPadding     = ImVec2(10, 10);
-    style.FramePadding      = ImVec2(8, 4);
-    style.ItemSpacing       = ImVec2(8, 6);
+    style.TabRounding = 4.0f;
+    style.WindowPadding = ImVec2(10, 10);
+    style.FramePadding = ImVec2(8, 4);
+    style.ItemSpacing = ImVec2(8, 6);
+}
+
+// Representative display color derived from a slot's active detection range, so
+// the settings swatch + feed overlay follow what the user actually configured
+// (sliders / eyedropper) instead of a separate hand-picked color. A paired
+// follower slot borrows its source slot's range.
+ImVec4 RangeDisplayColor(const std::vector<MarkerSlot> &slots, size_t i, DetectionMode mode)
+{
+    const MarkerSlot *s = &slots[i];
+    if (s->pairSourceSlot >= 0 && s->pairSourceSlot < static_cast<int>(slots.size()))
+        s = &slots[s->pairSourceSlot];
+
+    if (mode == DetectionMode::HSV)
+    {
+        // dualHue means red wrapping 0/179 — anchor the swatch at pure red (hue 0).
+        const float hue = s->hsv.dualHue ? 0.0f : 0.5f * (s->hsv.hMin + s->hsv.hMax);
+        float r, g, b;
+        ImGui::ColorConvertHSVtoRGB(hue / 179.0f, 1.0f, 1.0f, r, g, b);
+        return ImVec4(r, g, b, 1.0f);
+    }
+
+    // RGB-ratio: take the window-center chromaticity and rescale to the brightest
+    // channel so the swatch reads as a vivid color rather than a dim chromaticity.
+    float rn = 0.5f * (s->rgb.rMin + s->rgb.rMax);
+    float gn = 0.5f * (s->rgb.gMin + s->rgb.gMax);
+    float bn = std::max(0.0f, 1.0f - rn - gn);
+    const float mx = std::max({rn, gn, bn});
+    if (mx > 1e-5f)
+    {
+        rn /= mx;
+        gn /= mx;
+        bn /= mx;
+    }
+    return ImVec4(rn, gn, bn, 1.0f);
 }
 
 // Helper: combo picking another marker slot by name. `selfIndex` is excluded so
@@ -411,17 +445,23 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
         auto &slot = state.markers[i];
         ImGui::PushID(static_cast<int>(i));
 
+        // Display color follows the configured detection range (done for every
+        // slot, including collapsed ones, so the feed overlay stays in sync too).
+        const ImVec4 disp = RangeDisplayColor(state.markers, i, state.detectionMode);
+        slot.overlayColor[0] = disp.x;
+        slot.overlayColor[1] = disp.y;
+        slot.overlayColor[2] = disp.z;
+
         bool open = ImGui::TreeNodeEx((void *)i, ImGuiTreeNodeFlags_DefaultOpen, "%zu: %s", i, slot.name);
         if (open)
         {
             if (ImGui::InputText("Name##slot_name", slot.name, sizeof(slot.name)))
                 state.markersDirty = true;
-            if (ImGui::ColorEdit3("Color##slot_color", slot.overlayColor,
-                                  ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
-            {
-                // The overlay color is independent of the active detection range.
-                state.markersDirty = true;
-            }
+            // Read-only swatch: the color is derived from the detection range, not
+            // hand-picked, so it always matches what the detector is looking for.
+            ImGui::ColorButton("##slot_color", disp, ImGuiColorEditFlags_NoTooltip, ImVec2(20, 20));
+            ImGui::SameLine();
+            ImGui::TextDisabled("(color follows range)");
 
             int observationId = static_cast<int>(i);
             bool matched = false;
@@ -437,8 +477,10 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             if (held)
                 ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "held");
             else
-                ImGui::TextColored(matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-                                   matched ? "detected" : "—");
+                ImGui::TextColored(
+                    matched ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                    matched ? "detected" : "—"
+                );
 
             ImGui::Text("Observation id: %d (row index)", static_cast<int>(i));
 
@@ -452,51 +494,72 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
             {
                 ImGui::TextDisabled("(uses color range of slot %d — second blob)", slot.pairSourceSlot);
             }
-            else if (state.detectionMode == DetectionMode::HSV)
-            {
-                bool changed = false;
-                changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
-                changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
-                changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
-                changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
-                changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
-                changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
-
-                // Red wraps the hue circle — enable a second hue band to catch both ends.
-                changed |= ImGui::Checkbox("Dual hue (red)##dual_hue", &slot.hsv.dualHue);
-                if (slot.hsv.dualHue)
-                {
-                    changed |= ImGui::SliderInt("H min 2##h_min2", &slot.hsv.hMin2, 0, 179);
-                    changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
-                }
-                if (changed)
-                    state.markersDirty = true;
-            }
             else
             {
-                bool changed = false;
-                changed |= ImGui::InputFloat("r min##chroma_r_min", &slot.rgb.rMin, 0.01f, 0.1f, "%.2f");
-                changed |= ImGui::InputFloat("r max##chroma_r_max", &slot.rgb.rMax, 0.01f, 0.1f, "%.2f");
-                changed |= ImGui::InputFloat("g min##chroma_g_min", &slot.rgb.gMin, 0.01f, 0.1f, "%.2f");
-                changed |= ImGui::InputFloat("g max##chroma_g_max", &slot.rgb.gMax, 0.01f, 0.1f, "%.2f");
-                changed |= ImGui::InputFloat("Saturation min##chroma_sat", &slot.rgb.satMin, 0.01f, 0.1f, "%.2f");
-                changed |= ImGui::InputInt("Brightness min##rgb_vmin", &slot.rgb.vMin, 1, 10);
-                if (changed)
+                // Eyedropper: arm this slot, then click the camera feed to sample
+                // a pixel; Application derives the active range from it.
+                const bool picking = (state.eyedropperSlot == static_cast<int>(i));
+                if (picking)
                 {
-                    // Chromaticity windows and saturation floor live in [0,1]; brightness in [0,255].
-                    slot.rgb.rMin = std::clamp(slot.rgb.rMin, 0.0f, 1.0f);
-                    slot.rgb.rMax = std::clamp(slot.rgb.rMax, 0.0f, 1.0f);
-                    slot.rgb.gMin = std::clamp(slot.rgb.gMin, 0.0f, 1.0f);
-                    slot.rgb.gMax = std::clamp(slot.rgb.gMax, 0.0f, 1.0f);
-                    slot.rgb.satMin = std::clamp(slot.rgb.satMin, 0.0f, 1.0f);
-                    slot.rgb.vMin = std::clamp(slot.rgb.vMin, 0, 255);
-                    state.markersDirty = true;
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Click the camera feed to sample...");
+                    if (ImGui::Button("Cancel pick##eyedrop_cancel"))
+                        state.eyedropperSlot = -1;
+                }
+                else if (ImGui::Button("Pick color (eyedropper)##eyedrop"))
+                {
+                    state.eyedropperSlot = static_cast<int>(i);
+                    state.showCameraFeed = true; // make sure the feed is visible to click on
+                }
+
+                if (state.detectionMode == DetectionMode::HSV)
+                {
+                    bool changed = false;
+                    changed |= ImGui::SliderInt("H min##h_min", &slot.hsv.hMin, 0, 179);
+                    changed |= ImGui::SliderInt("H max##h_max", &slot.hsv.hMax, 0, 179);
+                    changed |= ImGui::SliderInt("S min##s_min", &slot.hsv.sMin, 0, 255);
+                    changed |= ImGui::SliderInt("S max##s_max", &slot.hsv.sMax, 0, 255);
+                    changed |= ImGui::SliderInt("V min##v_min", &slot.hsv.vMin, 0, 255);
+                    changed |= ImGui::SliderInt("V max##v_max", &slot.hsv.vMax, 0, 255);
+
+                    // Red wraps the hue circle — enable a second hue band to catch both ends.
+                    changed |= ImGui::Checkbox("Dual hue (red)##dual_hue", &slot.hsv.dualHue);
+                    if (slot.hsv.dualHue)
+                    {
+                        changed |= ImGui::SliderInt("H min 2##h_min2", &slot.hsv.hMin2, 0, 179);
+                        changed |= ImGui::SliderInt("H max 2##h_max2", &slot.hsv.hMax2, 0, 179);
+                    }
+                    if (changed)
+                        state.markersDirty = true;
+                }
+                else
+                {
+                    bool changed = false;
+                    changed |= ImGui::InputFloat("r min##chroma_r_min", &slot.rgb.rMin, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("r max##chroma_r_max", &slot.rgb.rMax, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("g min##chroma_g_min", &slot.rgb.gMin, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("g max##chroma_g_max", &slot.rgb.gMax, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("b min##chroma_b_min", &slot.rgb.bMin, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("b max##chroma_b_max", &slot.rgb.bMax, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputFloat("Saturation min##chroma_sat", &slot.rgb.satMin, 0.01f, 0.1f, "%.2f");
+                    changed |= ImGui::InputInt("Brightness min##rgb_vmin", &slot.rgb.vMin, 1, 10);
+                    if (changed)
+                    {
+                        // Chromaticity windows and saturation floor live in [0,1]; brightness in [0,255].
+                        slot.rgb.rMin = std::clamp(slot.rgb.rMin, 0.0f, 1.0f);
+                        slot.rgb.rMax = std::clamp(slot.rgb.rMax, 0.0f, 1.0f);
+                        slot.rgb.gMin = std::clamp(slot.rgb.gMin, 0.0f, 1.0f);
+                        slot.rgb.gMax = std::clamp(slot.rgb.gMax, 0.0f, 1.0f);
+                        slot.rgb.bMin = std::clamp(slot.rgb.bMin, 0.0f, 1.0f);
+                        slot.rgb.bMax = std::clamp(slot.rgb.bMax, 0.0f, 1.0f);
+                        slot.rgb.satMin = std::clamp(slot.rgb.satMin, 0.0f, 1.0f);
+                        slot.rgb.vMin = std::clamp(slot.rgb.vMin, 0, 255);
+                        state.markersDirty = true;
+                    }
                 }
             }
 
             int bindingIdx = static_cast<int>(slot.binding);
-            if (ImGui::Combo("Binding##binding", &bindingIdx, kBindingLabels,
-                             IM_ARRAYSIZE(kBindingLabels)))
+            if (ImGui::Combo("Binding##binding", &bindingIdx, kBindingLabels, IM_ARRAYSIZE(kBindingLabels)))
             {
                 slot.binding = static_cast<BindingKind>(bindingIdx);
                 state.markersDirty = true;
@@ -594,12 +657,16 @@ void UIManager::DrawStatusBar(UIState &state, float fps, bool detectedThisFrame)
     ImGuiIO &io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - kStatusBarH));
     ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, kStatusBarH));
-    ImGui::Begin("##statusbar", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::Begin(
+        "##statusbar", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBringToFrontOnFocus
+    );
 
-    ImGui::Text("FPS: %.1f | %s | Markers: %s", fps, state.isRecording ? "Recording" : "Idle",
-                detectedThisFrame ? "detected" : "none");
+    ImGui::Text(
+        "FPS: %.1f | %s | Markers: %s", fps, state.isRecording ? "Recording" : "Idle",
+        detectedThisFrame ? "detected" : "none"
+    );
 
     ImGui::End();
 }
@@ -621,6 +688,19 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
         ImVec2 imgPos = ImGui::GetCursorScreenPos();
         ImGui::Image((ImTextureID)(uintptr_t)state.cameraFeedTexture, imgSize);
 
+        // Eyedropper: when a slot is armed, a click on the feed samples that pixel.
+        // Coordinates are normalized [0,1] so Application can map them onto the
+        // full-resolution camera frame regardless of the preview's display size.
+        const bool feedHovered = ImGui::IsItemHovered();
+        if (state.eyedropperSlot >= 0 && feedHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            ImVec2 m = ImGui::GetMousePos();
+            float nx = std::clamp((m.x - imgPos.x) / imgSize.x, 0.0f, 1.0f);
+            float ny = std::clamp((m.y - imgPos.y) / imgSize.y, 0.0f, 1.0f);
+            state.eyedropperPickNorm = {nx, ny};
+            state.eyedropperPickRequested = true;
+        }
+
         ImDrawList *dl = ImGui::GetWindowDrawList();
         dl->PushClipRect(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y), true);
 
@@ -637,9 +717,11 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
                 }
             }
 
-            ImU32 col = slot ? IM_COL32(static_cast<int>(slot->overlayColor[0] * 255.0f),
-                                        static_cast<int>(slot->overlayColor[1] * 255.0f),
-                                        static_cast<int>(slot->overlayColor[2] * 255.0f), 255)
+            ImU32 col = slot ? IM_COL32(
+                                   static_cast<int>(slot->overlayColor[0] * 255.0f),
+                                   static_cast<int>(slot->overlayColor[1] * 255.0f),
+                                   static_cast<int>(slot->overlayColor[2] * 255.0f), 255
+                               )
                              : IM_COL32(220, 220, 220, 255);
 
             ImVec2 center(imgPos.x + obs.centroidNorm.x * imgSize.x, imgPos.y + obs.centroidNorm.y * imgSize.y);
@@ -648,6 +730,16 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
             dl->AddCircleFilled(center, 2.0f, col);
             if (slot)
                 dl->AddText(ImVec2(center.x + 8.0f, center.y - 6.0f), col, slot->name);
+        }
+
+        // Eyedropper crosshair follows the cursor while a slot is armed.
+        if (state.eyedropperSlot >= 0 && feedHovered)
+        {
+            ImVec2 m = ImGui::GetMousePos();
+            const ImU32 cc = IM_COL32(255, 255, 255, 230);
+            dl->AddLine(ImVec2(m.x - 8, m.y), ImVec2(m.x + 8, m.y), cc, 1.0f);
+            dl->AddLine(ImVec2(m.x, m.y - 8), ImVec2(m.x, m.y + 8), cc, 1.0f);
+            dl->AddCircle(m, 6.0f, cc, 12, 1.0f);
         }
         dl->PopClipRect();
     }

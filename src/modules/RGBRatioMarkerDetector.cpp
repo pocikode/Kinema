@@ -84,7 +84,8 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
                 if (sat < range.satMin)
                     continue; // too gray/washed out
 
-                if (rn >= range.rMin && rn <= range.rMax && gn >= range.gMin && gn <= range.gMax)
+                if (rn >= range.rMin && rn <= range.rMax && gn >= range.gMin && gn <= range.gMax &&
+                    bn >= range.bMin && bn <= range.bMax)
                     mrow[x] = 255;
             }
         }

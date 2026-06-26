@@ -1,5 +1,4 @@
 #pragma once
-#include <geni.h>
 #include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
 #include "modules/MarkerAssigner.h"
@@ -10,6 +9,7 @@
 #include "modules/SkeletonDriver.h"
 #include "modules/VideoExporter.h"
 #include "ui/UIManager.h"
+#include <geni.h>
 
 #include <memory>
 
@@ -26,6 +26,7 @@ class Application : public Geni::Application
     void LoadRigFromState();
     void RebuildDetectorFromState();
     void RebuildBindingsFromState();
+    void ApplyEyedropperPick(); // sample the camera frame at the armed slot's clicked point
     glm::vec3 Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels);
 
     // Modules

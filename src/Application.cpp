@@ -1,11 +1,14 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include "Application.h"
 #include "modules/MarkerConfigIO.h"
+#include <GLFW/glfw3.h>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <imgui.h>
-#include <GLFW/glfw3.h>
+#include <opencv2/imgproc.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -43,8 +46,10 @@ void CollectBoneNames(Geni::GameObject *root, std::vector<std::string> &out)
 
 // Seed the UI with sensible default bindings so a fresh launch with the Mixamo
 // smoke rig + three markers drives head + both hands immediately.
-MarkerSlot MakeSlot(const char *name, const float color[3], const char *bone,
-                    BindingKind kind = BindingKind::Position, const char *ikRoot = "", const char *ikMid = "")
+MarkerSlot MakeSlot(
+    const char *name, const float color[3], const char *bone, BindingKind kind = BindingKind::Position,
+    const char *ikRoot = "", const char *ikMid = ""
+)
 {
     MarkerSlot slot;
     std::strncpy(slot.name, name, sizeof(slot.name) - 1);
@@ -69,40 +74,42 @@ bool Application::Init()
     // are Hint-only (detected, referenced by the matching palm chain). Palette
     // gives each arm three hues far apart on the hue circle to reduce same-arm
     // mis-attribution.
-    const float orange[3]  = {1.00f, 0.60f, 0.20f};
-    const float blue[3]    = {0.35f, 0.50f, 1.00f};
-    const float green[3]   = {0.30f, 1.00f, 0.40f};
-    const float red[3]     = {1.00f, 0.30f, 0.30f};
-    const float cyan[3]    = {0.30f, 0.85f, 1.00f};
+    const float orange[3] = {1.00f, 0.60f, 0.20f};
+    const float blue[3] = {0.35f, 0.50f, 1.00f};
+    const float green[3] = {0.30f, 1.00f, 0.40f};
+    const float red[3] = {1.00f, 0.30f, 0.30f};
+    const float cyan[3] = {0.30f, 0.85f, 1.00f};
     const float magenta[3] = {1.00f, 0.40f, 0.95f};
-    const float yellow[3]  = {1.00f, 0.95f, 0.20f};
+    const float yellow[3] = {1.00f, 0.95f, 0.20f};
 
-    auto head       = MakeSlot("head",        orange,  "mixamorig:Head", BindingKind::LookAt);
-    auto upperArmL  = MakeSlot("upperarm_L",  blue,    "", BindingKind::Hint);
-    auto lowerArmL  = MakeSlot("lowerarm_L",  green,   "", BindingKind::Hint);
-    auto palmL      = MakeSlot("palm_L",      red,     "mixamorig:LeftHand",  BindingKind::IKTarget,
-                               "mixamorig:LeftArm",  "mixamorig:LeftForeArm");
-    auto upperArmR  = MakeSlot("upperarm_R",  cyan,    "", BindingKind::Hint);
-    auto lowerArmR  = MakeSlot("lowerarm_R",  magenta, "", BindingKind::Hint);
-    auto palmR      = MakeSlot("palm_R",      yellow,  "mixamorig:RightHand", BindingKind::IKTarget,
-                               "mixamorig:RightArm", "mixamorig:RightForeArm");
+    auto head = MakeSlot("head", orange, "mixamorig:Head", BindingKind::LookAt);
+    auto upperArmL = MakeSlot("upperarm_L", blue, "", BindingKind::Hint);
+    auto lowerArmL = MakeSlot("lowerarm_L", green, "", BindingKind::Hint);
+    auto palmL = MakeSlot(
+        "palm_L", red, "mixamorig:LeftHand", BindingKind::IKTarget, "mixamorig:LeftArm", "mixamorig:LeftForeArm"
+    );
+    auto upperArmR = MakeSlot("upperarm_R", cyan, "", BindingKind::Hint);
+    auto lowerArmR = MakeSlot("lowerarm_R", magenta, "", BindingKind::Hint);
+    auto palmR = MakeSlot(
+        "palm_R", yellow, "mixamorig:RightHand", BindingKind::IKTarget, "mixamorig:RightArm", "mixamorig:RightForeArm"
+    );
 
     // Wire IK chains to their hint markers. Slot indices match push order below.
     palmL.upperArmMarkerSlot = 1; // upperarm_L
-    palmL.foreArmMarkerSlot  = 2; // lowerarm_L
+    palmL.foreArmMarkerSlot = 2;  // lowerarm_L
     palmR.upperArmMarkerSlot = 4; // upperarm_R
-    palmR.foreArmMarkerSlot  = 5; // lowerarm_R
+    palmR.foreArmMarkerSlot = 5;  // lowerarm_R
 
     // Narrow default HSV bands per color. Tune from the UI under real lighting.
     // Red wraps the hue circle; we expose the high band (165-179) — users can
     // add a second slot for low-band red if lighting demands it.
-    head.hsv      = {  5,  18, 150, 255, 100, 255}; // orange
-    upperArmL.hsv = {105, 125, 150, 255,  80, 255}; // blue
-    lowerArmL.hsv = { 45,  75, 150, 255,  80, 255}; // green
-    palmL.hsv     = {165, 179, 150, 255,  80, 255, true, 0, 10}; // red (dual hue: wraps 0/179)
-    upperArmR.hsv = { 85, 100, 150, 255,  80, 255}; // cyan
-    lowerArmR.hsv = {140, 159, 150, 255,  80, 255}; // magenta
-    palmR.hsv     = { 22,  35, 150, 255, 100, 255}; // yellow
+    head.hsv = {5, 18, 150, 255, 100, 255};                 // orange
+    upperArmL.hsv = {105, 125, 150, 255, 80, 255};          // blue
+    lowerArmL.hsv = {45, 75, 150, 255, 80, 255};            // green
+    palmL.hsv = {165, 179, 150, 255, 80, 255, true, 0, 10}; // red (dual hue: wraps 0/179)
+    upperArmR.hsv = {85, 100, 150, 255, 80, 255};           // cyan
+    lowerArmR.hsv = {140, 159, 150, 255, 80, 255};          // magenta
+    palmR.hsv = {22, 35, 150, 255, 100, 255};               // yellow
 
     m_uiState.markers = {head, upperArmL, lowerArmL, palmL, upperArmR, lowerArmR, palmR};
     m_uiState.markersDirty = true;
@@ -261,8 +268,8 @@ void Application::RebuildBindingsFromState()
             MarkerBinding b;
             b.markerId = observationId;
             b.boneName = slot.boneName;
-            b.mode = (slot.binding == BindingKind::LookAt) ? MarkerBinding::Mode::LookAt
-                                                           : MarkerBinding::Mode::Position;
+            b.mode =
+                (slot.binding == BindingKind::LookAt) ? MarkerBinding::Mode::LookAt : MarkerBinding::Mode::Position;
             bindings.push_back(b);
         }
     }
@@ -281,6 +288,106 @@ void Application::RebuildBindingsFromState()
         pairs.push_back({src, static_cast<int>(i)});
     }
     m_assigner.SetPairs(std::move(pairs));
+}
+
+void Application::ApplyEyedropperPick()
+{
+    if (!m_detector)
+        return;
+    const int slotIdx = m_uiState.eyedropperSlot;
+    if (slotIdx < 0 || slotIdx >= static_cast<int>(m_uiState.markers.size()))
+    {
+        m_uiState.eyedropperSlot = -1;
+        return;
+    }
+    auto &slot = m_uiState.markers[slotIdx];
+
+    const cv::Mat &frame = m_detector->GetLastFrame(); // BGR, full resolution
+    if (frame.empty())
+    {
+        m_uiState.eyedropperSlot = -1;
+        return;
+    }
+
+    const int cx =
+        std::clamp(static_cast<int>(std::lround(m_uiState.eyedropperPickNorm.x * frame.cols)), 0, frame.cols - 1);
+    const int cy =
+        std::clamp(static_cast<int>(std::lround(m_uiState.eyedropperPickNorm.y * frame.rows)), 0, frame.rows - 1);
+
+    // Average a small patch around the click so a single noisy pixel can't skew
+    // the sampled color.
+    const int rad = 2;
+    const int x0 = std::max(0, cx - rad), y0 = std::max(0, cy - rad);
+    const int x1 = std::min(frame.cols - 1, cx + rad), y1 = std::min(frame.rows - 1, cy + rad);
+    double sb = 0, sg = 0, sr = 0;
+    int count = 0;
+    for (int y = y0; y <= y1; ++y)
+    {
+        const cv::Vec3b *row = frame.ptr<cv::Vec3b>(y);
+        for (int x = x0; x <= x1; ++x)
+        {
+            sb += row[x][0];
+            sg += row[x][1];
+            sr += row[x][2];
+            ++count;
+        }
+    }
+    if (count == 0)
+    {
+        m_uiState.eyedropperSlot = -1;
+        return;
+    }
+    const float b = static_cast<float>(sb / count);
+    const float g = static_cast<float>(sg / count);
+    const float r = static_cast<float>(sr / count);
+
+    if (m_uiState.detectionMode == DetectionMode::HSV)
+    {
+        cv::Mat bgr(1, 1, CV_8UC3, cv::Scalar(b, g, r));
+        cv::Mat hsv;
+        cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
+        const cv::Vec3b px = hsv.at<cv::Vec3b>(0, 0);
+        const int h = px[0], s = px[1], v = px[2];
+
+        const int hTol = 10, sTol = 60, vTol = 60;
+        // Hue near the 0/179 wrap (red) needs a second band on the far side.
+        if (h <= hTol || h >= 179 - hTol)
+        {
+            slot.hsv.dualHue = true;
+            slot.hsv.hMin = 179 - hTol;
+            slot.hsv.hMax = 179;
+            slot.hsv.hMin2 = 0;
+            slot.hsv.hMax2 = hTol;
+        }
+        else
+        {
+            slot.hsv.dualHue = false;
+            slot.hsv.hMin = std::max(0, h - hTol);
+            slot.hsv.hMax = std::min(179, h + hTol);
+        }
+        slot.hsv.sMin = std::clamp(s - sTol, 30, 255);
+        slot.hsv.sMax = 255;
+        slot.hsv.vMin = std::clamp(v - vTol, 30, 255);
+        slot.hsv.vMax = 255;
+    }
+    else
+    {
+        const float total = r + g + b;
+        if (total > 1e-5f)
+        {
+            const float rn = r / total, gn = g / total;
+            const float tol = 0.06f;
+            slot.rgb.rMin = std::clamp(rn - tol, 0.0f, 1.0f);
+            slot.rgb.rMax = std::clamp(rn + tol, 0.0f, 1.0f);
+            slot.rgb.gMin = std::clamp(gn - tol, 0.0f, 1.0f);
+            slot.rgb.gMax = std::clamp(gn + tol, 0.0f, 1.0f);
+            // vMin / satMin are left as-is — brightness/saturation floors don't
+            // change with the picked hue.
+        }
+    }
+
+    m_uiState.eyedropperSlot = -1; // disarm after a successful pick
+    m_uiState.markersDirty = true; // resync detector ranges + reset stabilizer
 }
 
 glm::vec3 Application::Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels)
@@ -327,6 +434,11 @@ void Application::Update(float deltaTime)
             strncpy(m_uiState.modelPath, savedPath, sizeof(m_uiState.modelPath));
         }
         m_uiState.resetModelRequested = false;
+    }
+    if (m_uiState.eyedropperPickRequested)
+    {
+        ApplyEyedropperPick(); // derive the armed slot's range from the clicked pixel
+        m_uiState.eyedropperPickRequested = false;
     }
     if (m_uiState.detectionModeDirty)
     {
@@ -447,8 +559,7 @@ void Application::Update(float deltaTime)
                 // Blend toward the next keyframe so playback doesn't stair-step
                 // when the capture rate was below the render rate.
                 double span = keyframes[idx + 1].timestamp - keyframes[idx].timestamp;
-                float t = span > 0.0 ? static_cast<float>((m_playbackTime - keyframes[idx].timestamp) / span)
-                                     : 0.0f;
+                float t = span > 0.0 ? static_cast<float>((m_playbackTime - keyframes[idx].timestamp) / span) : 0.0f;
                 MotionRecorder::ApplyInterpolated(keyframes[idx], keyframes[idx + 1], t, *m_riggedSkeleton);
             }
             else
@@ -506,14 +617,14 @@ void Application::Update(float deltaTime)
     }
     if (m_uiState.exportMarkersRequested)
     {
-        SaveMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist,
-                         m_uiState.depthRefArea);
+        SaveMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist, m_uiState.depthRefArea);
         m_uiState.exportMarkersRequested = false;
     }
     if (m_uiState.importMarkersRequested)
     {
-        if (LoadMarkerConfig(m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist,
-                             m_uiState.depthRefArea))
+        if (LoadMarkerConfig(
+                m_uiState.markerConfigPath, m_uiState.markers, m_uiState.depthRefDist, m_uiState.depthRefArea
+            ))
             m_uiState.markersDirty = true; // re-validate bindings + resync detector ranges
         m_uiState.importMarkersRequested = false;
     }
@@ -533,8 +644,10 @@ void Application::Update(float deltaTime)
     if (m_uiState.exportVideoRequested)
     {
         const char *ext = (m_uiState.exportFmtIndex == 0) ? ".mp4" : ".avi";
-        m_exporter.Export(m_recorder.GetKeyframes(), m_riggedSkeleton.get(), m_uiState.exportFps, joinPath(ext),
-                          m_uiState.exportFmtIndex == 0);
+        m_exporter.Export(
+            m_recorder.GetKeyframes(), m_riggedSkeleton.get(), m_uiState.exportFps, joinPath(ext),
+            m_uiState.exportFmtIndex == 0
+        );
         m_uiState.exportVideoRequested = false;
     }
     if (m_uiState.exportGlbRequested)
@@ -547,8 +660,7 @@ void Application::Update(float deltaTime)
             std::filesystem::path src = m_uiState.loadedModelPath;
             if (src.is_relative())
                 src = Geni::Engine::GetInstance().GetFileSystem().GetAssetsFolder() / src;
-            m_glbExporter.Export(src.string(), m_recorder.GetKeyframes(), *m_riggedSkeleton,
-                                 joinPath(".glb"));
+            m_glbExporter.Export(src.string(), m_recorder.GetKeyframes(), *m_riggedSkeleton, joinPath(".glb"));
         }
         m_uiState.exportGlbRequested = false;
     }

@@ -31,6 +31,11 @@ struct RGBRatioRange
     float rMax = 1.0f;
     float gMin = 0.0f;
     float gMax = 0.35f;
+    // Blue ratio window bn = B/(R+G+B). Default 0..1 = unconstrained. Needed to
+    // separate colors that share rn/gn but differ in blue, e.g. red (bn~0) vs
+    // magenta (bn~0.4): set red's bMax low and magenta's bMin high.
+    float bMin = 0.0f;
+    float bMax = 1.0f;
     int vMin = 30;        // reject dark pixels: mean(R,G,B) must exceed this
     float satMin = 0.12f; // reject neutral/gray pixels (chromaticity near 1/3,1/3)
 };

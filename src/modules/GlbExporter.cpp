@@ -266,6 +266,59 @@ bool GlbExporter::Export(const std::string &srcGlbPath, const std::vector<Keyfra
         }
     }
 
+    // The writer resolves every accessor/buffer_view reference to a JSON index by
+    // pointer subtraction against data->accessors / data->buffer_views. We are about
+    // to repoint those arrays at newAccessors/newViews, so EVERY remaining reference
+    // into the originals must be remapped too — otherwise the writer emits garbage
+    // indices for meshes/skins/images and the GLB fails to load. (Accessor dense
+    // buffer_views and animation samplers were remapped above.) These bases are still
+    // the originals here, before the swap below.
+    auto remapAcc = [&](cgltf_accessor *&p)
+    {
+        if (p)
+            p = &newAccessors[static_cast<cgltf_size>(p - data->accessors)];
+    };
+    auto remapView = [&](cgltf_buffer_view *&p)
+    {
+        if (p)
+            p = &newViews[static_cast<cgltf_size>(p - data->buffer_views)];
+    };
+
+    // Accessor sparse buffer views.
+    for (cgltf_size i = 0; i < srcAccCount; ++i)
+    {
+        cgltf_accessor &a = newAccessors[i];
+        if (a.is_sparse)
+        {
+            remapView(a.sparse.indices_buffer_view);
+            remapView(a.sparse.values_buffer_view);
+        }
+    }
+
+    // Mesh primitives: index accessor, vertex attributes, morph-target attributes.
+    for (cgltf_size m = 0; m < data->meshes_count; ++m)
+    {
+        cgltf_mesh &mesh = data->meshes[m];
+        for (cgltf_size pr = 0; pr < mesh.primitives_count; ++pr)
+        {
+            cgltf_primitive &prim = mesh.primitives[pr];
+            remapAcc(prim.indices);
+            for (cgltf_size at = 0; at < prim.attributes_count; ++at)
+                remapAcc(prim.attributes[at].data);
+            for (cgltf_size t = 0; t < prim.targets_count; ++t)
+                for (cgltf_size at = 0; at < prim.targets[t].attributes_count; ++at)
+                    remapAcc(prim.targets[t].attributes[at].data);
+        }
+    }
+
+    // Skins: inverse bind matrices.
+    for (cgltf_size s = 0; s < data->skins_count; ++s)
+        remapAcc(data->skins[s].inverse_bind_matrices);
+
+    // Images embedded in the binary chunk.
+    for (cgltf_size im = 0; im < data->images_count; ++im)
+        remapView(data->images[im].buffer_view);
+
     // Set up the new "times" buffer view + accessor.
     cgltf_size viewIdx = srcViewsCount;
     cgltf_size accIdx = srcAccCount;
