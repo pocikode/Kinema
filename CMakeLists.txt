@@ -90,6 +90,9 @@ if(WIN32)
     if(EXISTS "${KINEMA_RC}")
         target_sources(${PROJECT_NAME} PRIVATE ${KINEMA_RC})
     endif()
+    # <windows.h> (pulled in by portable-file-dialogs) defines min/max macros
+    # that collide with std::min/std::max. NOMINMAX suppresses them.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
