@@ -1,57 +1,68 @@
 # Kinema — User Guide
 
-Kinema tracks colored markers via webcam, drives a rigged 3D skeleton in real-time, records the motion, and lets you export results as JSON, video (MP4/AVI), or a GLB that bundles the animation back onto the source rig.
+Kinema tracks colored markers via webcam using chromaticity-based (RGB-ratio) detection, drives a rigged 3D skeleton in real time, records the motion, and exports results as JSON, video (MP4/AVI), or a GLB with the animation baked back onto the source rig.
 
 ---
 
 ## Requirements
 
 - A webcam connected to your computer
-- A bright, solid-colored physical marker (sticker, tape, or painted dot)
-  - Best colors: **orange, green, yellow, or red**
-  - Avoid: white, black, grey, skin tones (too little saturation)
+- Bright, solid-colored physical markers (stickers, tape, colored balls, or painted dots)
+  - Best colors: **red, orange, yellow, green, cyan, blue, magenta** — saturated colors far apart from each other
+  - Avoid: white, black, grey, skin tones (too little chroma to classify)
 - A rigged GLB/glTF model with a compatible skeleton (Mixamo models work out of the box)
-- macOS with GLFW, GLEW, and OpenCV installed
+- A **Release** build of Kinema (see README for build instructions)
 
 ---
 
 ## Launch
 
 ```bash
-./build/kinema
+./build/kinema          # macOS
+.\build\Release\kinema.exe   # Windows
 ```
 
-On first launch, Kinema auto-loads the bundled Mixamo low-poly rig and seeds three default marker slots (head + both hands) so you can start experimenting immediately.
+On startup, Kinema auto-loads the bundled Mixamo low-poly rig and seeds **seven default marker slots** — one head marker plus three markers per arm:
+
+| # | Slot | Default color | Binding | Role |
+|---|------|--------------|---------|------|
+| 0 | `head` | orange | Look At | Head rotates to face the marker |
+| 1 | `upperarm_L` | blue | Hint | Aims the left upper-arm bone |
+| 2 | `lowerarm_L` | green | Hint | Left forearm-aim fallback |
+| 3 | `palm_L` | red | IK Target | Left-arm end-effector (2-bone IK) |
+| 4 | `upperarm_R` | cyan | Hint | Aims the right upper-arm bone |
+| 5 | `lowerarm_R` | magenta | Hint | Right forearm-aim fallback |
+| 6 | `palm_R` | yellow | IK Target | Right-arm end-effector (2-bone IK) |
 
 The window opens with:
-- **3D viewport** — grid, coordinate axes, and the loaded rigged model (centered on the origin)
+- **3D viewport** — grid, coordinate axes, and the loaded rigged model
 - **Left sidebar** — five collapsible sections: Model, Detector, Markers, Recording, Export
-- **Bottom-right** — live camera feed with per-marker overlay circles
-- **Top-right** — XYZ orientation gizmo (rotates with camera)
+- **Bottom-right** — live camera feed with per-marker overlay circles and labels
+- **Top-right** — XYZ orientation gizmo (rotates with the camera)
 - **Bottom bar** — FPS, recording state, marker detection status
 - **Top menu bar** — File → Save JSON / Export Video shortcuts
 
 ---
 
-## Interface Overview
+## How RGB-Ratio Detection Works
+
+Instead of thresholding raw pixel colors, Kinema classifies each pixel by its **chromaticity** — the proportion of each channel in the total brightness:
 
 ```
-┌──────────────────────────────────────────────────┐
-│  File  [menu bar]                          [gizmo]│
-├──────────────┬───────────────────────────────────┤
-│ ▼ Model      │                                   │
-│──────────────│         3D Viewport               │
-│ ▼ Detector   │      (rigged model here)          │
-│──────────────│                                   │
-│ ▼ Markers    │                                   │
-│──────────────│                    ┌─────────────┐│
-│ ▶ Recording  │                    │ Camera Feed ││
-│──────────────│                    │ + overlays  ││
-│ ▶ Export     │                    └─────────────┘│
-├──────────────┴───────────────────────────────────┤
-│ FPS: 60.0 | Idle | Markers: none       [status] │
-└──────────────────────────────────────────────────┘
+r = R / (R+G+B)     g = G / (R+G+B)     b = B / (R+G+B)
 ```
+
+Because the ratios are normalized, a marker keeps roughly the same `r`/`g`/`b` values whether it is brightly lit or in shadow — this is what makes RGB-ratio mode more robust to lighting changes than raw color thresholding.
+
+A pixel matches a marker slot when:
+
+1. `r`, `g`, and `b` each fall inside the slot's configured windows,
+2. the pixel is bright enough (`mean(R,G,B) > Brightness min`), and
+3. the pixel is saturated enough (its chromaticity deviates from neutral grey `(⅓,⅓,⅓)` by at least `Saturation min` — this rejects grey/washed-out pixels).
+
+Before classification, the camera frame is **average-pooled**: downsampled by averaging blocks of `Pool size × Pool size` pixels. This suppresses pixel noise and speeds up detection. Enable **Show pooled frame** in the Detector panel to see exactly what the detector sees (a blocky version of the feed) — useful for debugging.
+
+Each slot produces at most one observation: the largest matching blob (see *Marker pairing* below for the second-largest).
 
 ---
 
@@ -61,70 +72,106 @@ The window opens with:
 
 In the **Model** section:
 
-1. The path field defaults to `models/mixamo_lowpoly/mixamo-animated-lowpoly.glb`. Replace it with any GLB/glTF rig path (absolute or relative to the `assets/` folder) if you want a different character.
-2. Click **Load Model**. Use **Reset** to return the rig to its bind pose / origin.
+1. The path field defaults to the bundled Mixamo rig. Replace it with any GLB/glTF rig path if you want a different character.
+2. Click **Load Model**. Use **Reset** to return the rig to its bind pose.
 
-Once loaded, the section shows the resolved path and the total number of bones. The bone list becomes available in the Markers section's Bone dropdowns.
+Once loaded, the section shows the resolved path and the bone count, and the bone dropdowns in the Markers section become available.
 
-> The default rig auto-loads on startup, so you can skip straight to the Detector section the first time.
+> The default rig auto-loads on startup, so you can usually skip this step.
 
----
+### 2. Select the RGB Ratio Detector
 
-### 2. Tune HSV Ranges
+In the **Detector** panel:
 
-Kinema uses HSV color tracking. In the **Detector** panel, you can see the current tracking mode. Configure the per-marker HSV ranges in the **Markers** panel below.
+| Control | What it does |
+|---------|-------------|
+| Mode | Detector backend — **RGB Ratio** (default) |
+| Pool size | Average-pool block size (2–32, default 8). Larger = less noise and faster, but small/distant markers may disappear. |
+| Show pooled frame | Preview the pooled (blocky) frame in the camera feed instead of the raw image |
 
----
+The panel also holds the **jitter filter** (applies to all markers, live-tunable):
+
+| Control | What it does |
+|---------|-------------|
+| Smoothing | EMA factor 0–1. Higher = snappier response, lower = smoother but laggier. |
+| Deadzone | Radius (normalized) within which small centroid movement is ignored — kills stationary jitter |
+| Occlusion hold | When a marker vanishes, keep extrapolating its motion for this many seconds (0 = off) |
+| Arm forward | Constant forward lean applied to IK arms (world units) |
+
+and the **depth calibration** (see *Depth Estimation* below).
 
 ### 3. Configure Marker Slots
 
-In the **Markers** panel, click **+ Add marker** for each physical marker you want to track. Each slot has:
+In the **Markers** panel, use **+ Add marker** / **- Remove last** to manage slots. Each slot shows:
 
-**HSV Range**
+- **Name** — label drawn next to the marker's circle in the camera feed.
+- **Color swatch** — derived automatically from the configured detection range, so it always reflects what the detector is looking for.
+- **Status** — `detected` (green) when the color is found this frame, `held` (yellow) while occlusion-hold is extrapolating, `—` (grey) otherwise.
 
-| Slider | What it does |
-|--------|-------------|
-| H min / H max | Select the hue range (see table below) |
-| S min / S max | Filter out dull/grey areas — raise Min to ~80 |
-| V min / V max | Filter out very dark areas — raise Min to ~50 |
+#### Sampling a color (recommended)
 
-**Hue reference (OpenCV HSV, range 0–179):**
+Click **Pick color (eyedropper)**, then click your physical marker in the *Camera Feed* window. Kinema averages a small patch around the click, computes its chromaticity, and sets the slot's `r`/`g` windows to ±0.06 around it. The `b` window, brightness floor, and saturation floor are left as configured.
 
-| Color | Hue Min | Hue Max |
-|-------|---------|---------|
-| Red   | 0       | 10 (and 165–179) |
-| Orange | 5      | 25      |
-| Yellow | 22     | 38      |
-| Green  | 35     | 85      |
-| Blue   | 90     | 130     |
-| Purple | 130    | 160     |
+Repeat per slot, holding each marker in front of the camera under the same lighting you will record in.
 
-**Bone binding**
+#### Manual tuning (optional)
 
-| Field | Description |
-|-------|-------------|
-| Name | Label shown next to the marker's circle in the camera feed overlay |
-| Color | Overlay circle color in the camera feed |
-| Binding | How the marker drives the skeleton (see below) |
-| Bone | Target bone — a dropdown populated from the loaded rig |
+| Field | Meaning |
+|-------|---------|
+| r min / r max | Red chromaticity window (0–1) |
+| g min / g max | Green chromaticity window (0–1) |
+| b min / b max | Blue chromaticity window (0–1). Default 0–1 = unconstrained; needed to separate colors that share r/g but differ in blue, e.g. red (b≈0) vs magenta (b≈0.4). |
+| Saturation min | Rejects grey/washed-out pixels (0–1, default 0.12). Raise if background objects false-trigger; lower if a pale marker is missed. |
+| Brightness min | Rejects dark pixels (0–255, default 30). Raise in bright rooms to ignore shadows. |
 
-**Binding modes:**
+Approximate chromaticity windows for common marker colors (starting points — the eyedropper is more accurate for your lighting):
+
+| Color | r | g | b |
+|-------|------|------|------|
+| Red | 0.50–1.00 | 0.00–0.30 | 0.00–0.30 |
+| Orange | 0.45–0.65 | 0.25–0.40 | 0.00–0.25 |
+| Yellow | 0.38–0.52 | 0.38–0.52 | 0.00–0.20 |
+| Green | 0.00–0.30 | 0.45–1.00 | 0.00–0.35 |
+| Cyan | 0.00–0.25 | 0.33–0.50 | 0.35–0.60 |
+| Blue | 0.00–0.30 | 0.10–0.35 | 0.45–1.00 |
+| Magenta | 0.35–0.55 | 0.00–0.25 | 0.35–0.60 |
+
+#### Marker pairing (one color, two markers)
+
+Set **Pair with (shares color)** on a slot to reference another slot. The paired (follower) slot then has no color range of its own — it is resolved as the **second-largest blob** of the source slot's color, and left/right identity is disambiguated automatically. Useful when you only have two markers of the same color (e.g. two red gloves).
+
+#### Binding modes
 
 | Mode | Description |
 |------|-------------|
 | Position | Moves the bone to the unprojected marker position; rotation unchanged |
-| IK Target (2-bone) | Marker is the end-effector; analytical 2-bone IK bends root → mid → end toward the marker |
-| Look At (rotation only) | Bone rotates to face the marker; position is never written (avoids neck/spine stretching) |
+| IK Target (2-bone) | Marker is the end-effector; analytical 2-bone IK bends root → mid → end toward it |
+| Look At (rotation only) | Bone rotates to face the marker; position is never written (no neck/spine stretching) |
+| Hint (detect only) | Marker is tracked but drives no bone directly; referenced by an IK Target slot as an arm-direction hint |
 
-For **IK Target**, three bones must be selected: **IK Root** (e.g. shoulder), **IK Mid** (e.g. elbow), **End** (e.g. hand). The defaults seed `mixamorig:LeftArm / LeftForeArm / LeftHand` (and the right-side equivalents) for Mixamo rigs.
+For **IK Target**, select three bones — **IK Root** (e.g. shoulder), **IK Mid** (elbow), **End** (hand) — and optionally reference an **Upper-arm marker** and **Lower-arm marker** (Hint slots). The upper-arm hint aims the upper-arm bone; the lower-arm hint acts as a forearm-aim fallback when the palm marker is occluded. The default slots come pre-wired this way for Mixamo rigs.
 
-When a marker is detected, its slot shows a green **detected** indicator. The camera feed shows a colored overlay circle at the marker's position.
+#### Saving the setup
 
-> **Tip:** Start with a narrow Hue range and widen if detection is unstable.
+**Export config...** / **Import config...** write and read the entire marker setup (RGB-ratio ranges, bindings, IK wiring, pairing) as a JSON file, so a tuned configuration can be reused across sessions.
 
----
+### 4. Calibrate Depth (optional, recommended)
 
-### 4. Navigate the 3D Viewport
+Kinema estimates marker depth from apparent blob size:
+
+```
+depth ≈ Ref distance × sqrt(Ref area / blob area in pixels)
+```
+
+To calibrate, in the **Detector → Depth** group:
+
+1. Stand with the marker at a known distance from the camera (default reference: 2 m). Adjust **Ref distance** if you use a different distance.
+2. Select which slot to calibrate against in **Calib marker**.
+3. Click **Calibrate from marker** — the marker's current blob area is captured as **Ref area**.
+
+Depth accuracy depends on the marker staying flat and face-on to the camera; partial occlusion shrinks the blob and reads as "further away".
+
+### 5. Navigate the 3D Viewport
 
 | Action | Control |
 |--------|---------|
@@ -132,47 +179,39 @@ When a marker is detected, its slot shows a green **detected** indicator. The ca
 | Pan | Right mouse button + drag |
 | Zoom | Scroll wheel |
 
-The **XYZ gizmo** (top-right) reflects the current camera orientation:
-- **Red** = X axis
-- **Green** = Y axis
-- **Blue** = Z axis
+The XYZ gizmo (top-right) mirrors the camera orientation: **red** = X, **green** = Y, **blue** = Z.
 
----
+### 6. Record Motion
 
-### 5. Record Motion
+1. Ensure the markers you need show **detected**.
+2. Open the **Recording** panel and click **START RECORDING**.
+3. Perform the motion in front of the camera.
+4. Click **STOP RECORDING**.
 
-1. Ensure at least one marker shows **detected**
-2. Open the **Recording** panel and click **START RECORDING**
-3. Move the markers in front of the camera
-4. Click **STOP RECORDING**
+The panel shows elapsed time and keyframe count live. Keyframes store **local-space** bone poses.
 
-The panel shows elapsed time and keyframe count in real time.
+### 7. Reconstruct & Preview
 
----
+After stopping, click **RECONSTRUCT 3D** to replay the recording on the skeleton in the viewport (with interpolation between keyframes). Press it again to replay.
 
-### 6. Reconstruct & Preview
-
-After stopping, click **RECONSTRUCT 3D** to replay the recorded motion on the skeleton in the 3D viewport. The recording plays once; press the button again to replay.
-
----
-
-### 7. Export Results
+### 8. Export Results
 
 In the **Export** section:
 
 | Field | Description |
 |-------|-------------|
-| Output Format | MP4 (recommended) or AVI — only affects the video export |
+| Output Format | MP4 (recommended) or AVI — affects the video export only |
 | FPS | Frames per second for the exported video (1–60) |
-| Directory | Destination folder. Defaults to `$HOME`. **Browse…** opens a native folder picker. |
-| Filename (no extension) | Base name. Defaults to `kinema_YYYYMMDD`. The appropriate extension is added per format. |
+| Directory | Destination folder (defaults to `$HOME`); **Browse…** opens a native folder picker |
+| Filename (no extension) | Base name, defaults to `kinema_YYYYMMDD`; the extension is added per format |
 
-Then, using the buttons inside the Export section:
+Then:
+
 - **SAVE JSON** — writes `<dir>/<name>.json` with a per-bone local-space keyframe timeline (schema v2).
-- **EXPORT VIDEO** — renders each keyframe to an offscreen framebuffer and writes `<dir>/<name>.mp4` or `.avi`.
-- **EXPORT GLB** — takes the source GLB you loaded and appends a new animation named `Recorded` built from your keyframes, writing `<dir>/<name>.glb`. Open the result in any glTF viewer (Blender, [glb.ee](https://glb.ee), Three.js) to verify.
+- **EXPORT VIDEO** — renders each keyframe offscreen and writes `<dir>/<name>.mp4` or `.avi`.
+- **EXPORT GLB** — appends a new animation named `Recorded` to the source GLB and writes `<dir>/<name>.glb`. Open it in any glTF viewer (Blender, [glb.ee](https://glb.ee), Three.js) to verify.
 
-**Save JSON** and **Export Video** are also on the **File** menu. **Export GLB** is only available from the Export section.
+**Save JSON** and **Export Video** are also on the **File** menu.
 
 **JSON schema (v2):**
 ```json
@@ -196,61 +235,47 @@ Poses are stored in **local space** (relative to each bone's parent), so the rig
 
 ## Troubleshooting
 
-**Marker not detected / status shows "none"**
-- Move the marker directly in front of the camera
-- Adjust H min/max to match your marker color (use the table above)
-- Increase lighting — poor light reduces saturation
-- Raise V min if the room is bright, lower it if dim
+**Marker not detected / status shows "—"**
+- Use the **eyedropper**: click the marker in the camera feed under recording lighting — this beats manual tuning every time.
+- Enable **Show pooled frame** to see the detector's actual input; if the marker vanishes into the background there, lower **Pool size** or use a bigger marker.
+- Lower **Saturation min** for pale markers; lower **Brightness min** in dim rooms.
+- If two slots fight over one marker, their chromaticity windows overlap — tighten the `b` window (e.g. red vs magenta) or pick more distant colors.
+
+**Wrong marker picked up (background object)**
+- Raise **Saturation min** — most background surfaces are near-grey.
+- Raise **Brightness min** to reject shadows.
+- Narrow the offending slot's `r`/`g`/`b` windows.
 
 **Bone dropdown is empty**
-- Load a model first via the **Model** panel; bones are unavailable until a model is loaded
+- Load a model first via the **Model** panel.
 
 **Skeleton doesn't move**
-- Confirm the bone name in the slot matches the skeleton's bone name exactly
-- For IK Target, all three bones (root, mid, end) must be set
+- Confirm each slot's bone selection matches a real bone in the loaded rig.
+- For IK Target, all three bones (root, mid, end) must be set.
+- Hint slots never move bones by themselves — they must be referenced from an IK Target slot.
 
 **Camera feed shows "Camera not available"**
-- Check that your webcam is connected and not in use by another app
-- On macOS, grant camera permission in System Preferences → Privacy → Camera
-- The app tries camera index 0 by default; multiple cameras may require a code change
+- Check the webcam is connected and not used by another app.
+- On macOS, grant camera permission (System Settings → Privacy & Security → Camera); the app retries automatically once granted.
+- The app uses camera index 0; multiple cameras may require a code change.
 
-**Target position moves erratically (HSV mode)**
-- The depth estimate (Z axis) uses marker area — keep the marker flat and face-on to the camera
-- Large depth jumps mean the marker is partially occluded; try a larger, brighter sticker
+**Marker position jumps around**
+- Lower **Smoothing** and/or raise **Deadzone** in the Detector panel.
+- Raise **Occlusion hold** so brief dropouts are bridged by extrapolation (slot shows `held`).
+
+**Depth (Z) is erratic**
+- Recalibrate: stand at **Ref distance** and click **Calibrate from marker**.
+- Keep the marker flat and face-on; occlusion shrinks the blob and skews depth.
 
 **Low FPS**
-- Close other GPU-heavy applications
-- Use Release build: `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel`
+- Use a Release build: `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel`
+- Raise **Pool size** — detection cost drops quadratically with pool size.
 
 **Export video is empty or won't open**
-- Ensure OpenCV was built with video codec support (`brew install opencv` includes this on macOS)
-- Try AVI format instead of MP4 if MP4 fails
+- Ensure OpenCV was built with video codec support (`brew install opencv` includes this on macOS).
+- Try AVI if MP4 fails.
 
-**GLB export fails or the resulting file won't open**
-- The source model must be a **single-buffer GLB**. Multi-buffer glTF-separate (`.gltf` + `.bin`) is not supported.
-- Check stderr — any bones the exporter couldn't resolve against the glTF node list are logged and skipped.
-- Make sure a recording exists (keyframe count > 0 in the Recording section) and a model has been loaded.
-
----
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| (none yet) | All actions are mouse-driven via the UI panels |
-
----
-
-## Depth Estimation Notes (HSV mode)
-
-Kinema uses **single-camera depth estimation** based on the apparent size of the marker:
-
-```
-depth ≈ referenceDistance × sqrt(referenceArea / markerAreaInPixels)
-```
-
-Default calibration constants (in `Application.cpp`):
-- `depthRefDist = 2.0` meters
-- `depthRefArea = 10000` px²
-
-For best accuracy, hold your marker at exactly 2 meters from the camera, note its pixel area from the **Markers** panel, and update `depthRefArea` to that value before recompiling.
+**GLB export fails or the file won't open**
+- The source model must be a **single-buffer GLB**; multi-file glTF (`.gltf` + `.bin`) is not supported.
+- Check stderr — bones that couldn't be resolved against the glTF node list are logged and skipped.
+- A recording must exist (keyframe count > 0) and a model must be loaded.

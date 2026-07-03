@@ -111,6 +111,17 @@ bool Application::Init()
     lowerArmR.hsv = {140, 159, 150, 255, 80, 255};          // magenta
     palmR.hsv = {22, 35, 150, 255, 100, 255};               // yellow
 
+    // Matching chromaticity windows for RGB-ratio mode (rMin,rMax, gMin,gMax,
+    // bMin,bMax; brightness/saturation floors keep their struct defaults).
+    // Tune from the UI (eyedropper) under real lighting.
+    head.rgb = {0.45f, 0.65f, 0.25f, 0.40f, 0.00f, 0.25f};      // orange
+    upperArmL.rgb = {0.00f, 0.30f, 0.10f, 0.35f, 0.45f, 1.00f}; // blue
+    lowerArmL.rgb = {0.00f, 0.30f, 0.45f, 1.00f, 0.00f, 0.35f}; // green
+    palmL.rgb = {0.50f, 1.00f, 0.00f, 0.30f, 0.00f, 0.30f};     // red
+    upperArmR.rgb = {0.00f, 0.25f, 0.33f, 0.50f, 0.35f, 0.60f}; // cyan
+    lowerArmR.rgb = {0.35f, 0.55f, 0.00f, 0.25f, 0.35f, 0.60f}; // magenta
+    palmR.rgb = {0.38f, 0.52f, 0.38f, 0.52f, 0.00f, 0.20f};     // yellow
+
     m_uiState.markers = {head, upperArmL, lowerArmL, palmL, upperArmR, lowerArmR, palmR};
     m_uiState.markersDirty = true;
     m_uiState.loadModelRequested = true;

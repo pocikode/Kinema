@@ -68,7 +68,7 @@ struct UIState
     glm::vec2 eyedropperPickNorm = {0.0f, 0.0f}; // normalized [0,1] click in the feed
 
     // Detector backend selection
-    DetectionMode detectionMode = DetectionMode::HSV;
+    DetectionMode detectionMode = DetectionMode::RGBRatio;
     bool detectionModeDirty = false; // set when mode changes; triggers detector rebuild
     int rgbPoolSize = 8;             // RGB-ratio average-pool block size
     bool showPooledFrame = false;    // show pooled frame instead of raw in camera feed
