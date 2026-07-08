@@ -327,15 +327,39 @@ void UIManager::DrawSidebar(UIState &state, const std::vector<MarkerObservation>
 
 void UIManager::DrawModelSection(UIState &state)
 {
-    ImGui::InputText("Path##model_path", state.modelPath, sizeof(state.modelPath));
-
-    float avail = ImGui::GetContentRegionAvail().x;
-    float spacing = ImGui::GetStyle().ItemSpacing.x;
-    float halfW = (avail - spacing) * 0.5f;
-    if (ImGui::Button("Load Model", ImVec2(halfW, 26)))
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("...").x -
+                            ImGui::GetStyle().FramePadding.x * 2.0f - ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::InputText("##model_path", state.modelPath, sizeof(state.modelPath),
+                         ImGuiInputTextFlags_EnterReturnsTrue))
         state.loadModelRequested = true;
     ImGui::SameLine();
-    if (ImGui::Button("Reset", ImVec2(halfW, 26)))
+    if (ImGui::Button("...##model_browse"))
+    {
+        // pfd's macOS backend needs an existing directory as the default
+        // location; resolve the current path's parent, falling back to $HOME.
+        std::error_code ec;
+        std::filesystem::path p = state.modelPath;
+        std::filesystem::path dir = p.has_parent_path() ? p.parent_path() : std::filesystem::current_path(ec);
+        std::string start = std::filesystem::is_directory(dir, ec) ? dir.string()
+                            : std::getenv("HOME")                  ? std::getenv("HOME")
+                                                                   : ".";
+        // macOS 'choose file of type' only matches UTIs reliably, not bare
+        // extensions; pfd strips the "*." prefix, so these yield the Khronos UTIs.
+#ifdef __APPLE__
+        std::vector<std::string> modelFilter = {"glTF models", "*.org.khronos.glb *.org.khronos.gltf"};
+#else
+        std::vector<std::string> modelFilter = {"glTF models", "*.glb *.gltf"};
+#endif
+        auto picked = pfd::open_file("Load model", start, modelFilter).result();
+        if (!picked.empty())
+        {
+            std::strncpy(state.modelPath, picked[0].c_str(), sizeof(state.modelPath) - 1);
+            state.modelPath[sizeof(state.modelPath) - 1] = 0;
+            state.loadModelRequested = true;
+        }
+    }
+
+    if (ImGui::Button("Reset", ImVec2(ImGui::GetContentRegionAvail().x, 26)))
         state.resetModelRequested = true;
 
     if (!state.loadedModelPath.empty())
@@ -429,8 +453,14 @@ void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObser
     ImGui::SameLine();
     if (ImGui::Button("Import config..."))
     {
-        auto picked =
-            pfd::open_file("Import marker config", startDir(), {"JSON files", "*.json", "All Files", "*"}).result();
+        // macOS 'choose file of type' only matches UTIs reliably, not bare
+        // extensions; pfd strips the "*." prefix, so this yields {"public.json"}.
+#ifdef __APPLE__
+        std::vector<std::string> jsonFilter = {"JSON files", "*.public.json"};
+#else
+        std::vector<std::string> jsonFilter = {"JSON files", "*.json"};
+#endif
+        auto picked = pfd::open_file("Import marker config", startDir(), jsonFilter).result();
         if (!picked.empty())
         {
             std::strncpy(state.markerConfigPath, picked[0].c_str(), sizeof(state.markerConfigPath) - 1);
