@@ -8,6 +8,7 @@
 #include <portable-file-dialogs.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -321,6 +322,9 @@ void UIManager::DrawSidebar(UIState &state, const std::vector<MarkerObservation>
 
     if (ImGui::CollapsingHeader("Export"))
         DrawExportSection(state);
+
+    if (ImGui::CollapsingHeader("Debug (Performance)"))
+        DrawDebugSection(state);
 
     ImGui::End();
 }
@@ -682,6 +686,62 @@ void UIManager::DrawExportSection(UIState &state)
     ImGui::Spacing();
 }
 
+void UIManager::DrawDebugSection(UIState &state)
+{
+    ImGui::Text(
+        "Detect: %.2f ms | Pose: %.2f ms | Total: %.2f ms", state.perfDetectMs, state.perfPoseMs,
+        state.perfDetectMs + state.perfPoseMs
+    );
+    ImGui::Spacing();
+
+    if (!state.perfSampling)
+    {
+        if (ImGui::Button("Start Sampling", ImVec2(-1, 0)))
+        {
+            state.perfResetRequested = true;
+            state.perfSampling = true;
+        }
+    }
+    else if (ImGui::Button("Stop Sampling", ImVec2(-1, 0)))
+    {
+        state.perfSampling = false;
+        // Dump the summary to the console so the numbers can be copied into a report.
+        std::printf(
+            "[perf] %d frames / %.1f s | FPS avg %.1f min %.1f max %.1f | "
+            "detect avg %.2f ms max %.2f ms | latency (detect+pose) avg %.2f ms\n",
+            state.perfFrameCount, state.perfDuration, state.perfFpsAvg, state.perfFpsMin, state.perfFpsMax,
+            state.perfDetectAvgMs, state.perfDetectMaxMs, state.perfDetectAvgMs + state.perfPoseAvgMs
+        );
+    }
+
+    if (state.perfFrameCount > 0)
+    {
+        ImGui::Text("Sampled: %d frames (%.1f s)", state.perfFrameCount, state.perfDuration);
+        ImGui::Text("FPS avg/min/max: %.1f / %.1f / %.1f", state.perfFpsAvg, state.perfFpsMin, state.perfFpsMax);
+        ImGui::Text("Detect avg/max: %.2f / %.2f ms", state.perfDetectAvgMs, state.perfDetectMaxMs);
+        ImGui::Text("Latency avg (detect+pose): %.2f ms", state.perfDetectAvgMs + state.perfPoseAvgMs);
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::Checkbox("Centroid accuracy test", &state.centroidTestActive) && state.centroidTestActive)
+        state.showCameraFeed = true; // make sure the feed is visible to click on
+    if (state.centroidTestActive)
+        ImGui::TextWrapped("Click the camera feed at the marker's true center; error to the nearest "
+                           "detected centroid is measured in camera pixels.");
+    if (state.centroidSampleCount > 0)
+    {
+        ImGui::Text("Samples: %d | last: %.1f px", state.centroidSampleCount, state.centroidErrLastPx);
+        ImGui::Text(
+            "Error avg/min/max: %.1f / %.1f / %.1f px", state.centroidErrAvgPx, state.centroidErrMinPx,
+            state.centroidErrMaxPx
+        );
+        if (ImGui::Button("Reset centroid samples"))
+            state.centroidResetRequested = true;
+    }
+    ImGui::Spacing();
+}
+
 void UIManager::DrawStatusBar(UIState &state, float fps, bool detectedThisFrame)
 {
     ImGuiIO &io = ImGui::GetIO();
@@ -722,13 +782,22 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
         // Coordinates are normalized [0,1] so Application can map them onto the
         // full-resolution camera frame regardless of the preview's display size.
         const bool feedHovered = ImGui::IsItemHovered();
-        if (state.eyedropperSlot >= 0 && feedHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        const bool wantPick = state.eyedropperSlot >= 0 || state.centroidTestActive;
+        if (wantPick && feedHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
             ImVec2 m = ImGui::GetMousePos();
             float nx = std::clamp((m.x - imgPos.x) / imgSize.x, 0.0f, 1.0f);
             float ny = std::clamp((m.y - imgPos.y) / imgSize.y, 0.0f, 1.0f);
-            state.eyedropperPickNorm = {nx, ny};
-            state.eyedropperPickRequested = true;
+            if (state.eyedropperSlot >= 0) // eyedropper wins when both are armed
+            {
+                state.eyedropperPickNorm = {nx, ny};
+                state.eyedropperPickRequested = true;
+            }
+            else
+            {
+                state.centroidClickNorm = {nx, ny};
+                state.centroidClickRequested = true;
+            }
         }
 
         ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -762,8 +831,8 @@ void UIManager::DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObs
                 dl->AddText(ImVec2(center.x + 8.0f, center.y - 6.0f), col, slot->name);
         }
 
-        // Eyedropper crosshair follows the cursor while a slot is armed.
-        if (state.eyedropperSlot >= 0 && feedHovered)
+        // Pick crosshair follows the cursor while the eyedropper or centroid test is armed.
+        if (wantPick && feedHovered)
         {
             ImVec2 m = ImGui::GetMousePos();
             const ImU32 cc = IM_COL32(255, 255, 255, 230);

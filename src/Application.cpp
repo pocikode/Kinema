@@ -8,6 +8,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -419,6 +420,88 @@ glm::vec3 Application::Unproject2DtoWorld(const glm::vec2 &centroidNorm, float a
     return glm::vec3(worldX, worldY, worldZ);
 }
 
+void Application::UpdatePerfStats(float deltaTime, const std::vector<MarkerObservation> &rawObservations)
+{
+    if (m_uiState.perfResetRequested)
+    {
+        m_perfFrames = 0;
+        m_perfDuration = 0.0f;
+        m_perfFpsSum = m_perfFpsMin = m_perfFpsMax = 0.0f;
+        m_perfDetectSumMs = m_perfDetectMaxMs = 0.0f;
+        m_perfPoseSumMs = 0.0f;
+        m_uiState.perfFrameCount = 0;
+        m_uiState.perfDuration = 0.0f;
+        m_uiState.perfFpsAvg = m_uiState.perfFpsMin = m_uiState.perfFpsMax = 0.0f;
+        m_uiState.perfDetectAvgMs = m_uiState.perfDetectMaxMs = 0.0f;
+        m_uiState.perfPoseAvgMs = 0.0f;
+        m_uiState.perfResetRequested = false;
+    }
+
+    if (m_uiState.perfSampling)
+    {
+        ++m_perfFrames;
+        m_perfDuration += deltaTime;
+        m_perfFpsSum += m_fps;
+        m_perfFpsMin = (m_perfFrames == 1) ? m_fps : std::min(m_perfFpsMin, m_fps);
+        m_perfFpsMax = std::max(m_perfFpsMax, m_fps);
+        m_perfDetectSumMs += m_uiState.perfDetectMs;
+        m_perfDetectMaxMs = std::max(m_perfDetectMaxMs, m_uiState.perfDetectMs);
+        m_perfPoseSumMs += m_uiState.perfPoseMs;
+
+        m_uiState.perfFrameCount = m_perfFrames;
+        m_uiState.perfDuration = m_perfDuration;
+        m_uiState.perfFpsAvg = m_perfFpsSum / m_perfFrames;
+        m_uiState.perfFpsMin = m_perfFpsMin;
+        m_uiState.perfFpsMax = m_perfFpsMax;
+        m_uiState.perfDetectAvgMs = m_perfDetectSumMs / m_perfFrames;
+        m_uiState.perfDetectMaxMs = m_perfDetectMaxMs;
+        m_uiState.perfPoseAvgMs = m_perfPoseSumMs / m_perfFrames;
+    }
+
+    if (m_uiState.centroidResetRequested)
+    {
+        m_centroidSamples = 0;
+        m_centroidErrSumPx = m_centroidErrMinPx = m_centroidErrMaxPx = 0.0f;
+        m_uiState.centroidSampleCount = 0;
+        m_uiState.centroidErrLastPx = 0.0f;
+        m_uiState.centroidErrAvgPx = m_uiState.centroidErrMinPx = m_uiState.centroidErrMaxPx = 0.0f;
+        m_uiState.centroidResetRequested = false;
+    }
+
+    if (m_uiState.centroidClickRequested)
+    {
+        m_uiState.centroidClickRequested = false;
+        const float fw = m_detector ? static_cast<float>(m_detector->GetFrameWidth()) : 0.0f;
+        const float fh = m_detector ? static_cast<float>(m_detector->GetFrameHeight()) : 0.0f;
+        if (fw > 0.0f && fh > 0.0f)
+        {
+            float best = -1.0f;
+            for (const auto &o : rawObservations)
+            {
+                if (o.predicted)
+                    continue;
+                const float dx = (o.centroidNorm.x - m_uiState.centroidClickNorm.x) * fw;
+                const float dy = (o.centroidNorm.y - m_uiState.centroidClickNorm.y) * fh;
+                const float d = std::sqrt(dx * dx + dy * dy);
+                if (best < 0.0f || d < best)
+                    best = d;
+            }
+            if (best >= 0.0f)
+            {
+                ++m_centroidSamples;
+                m_centroidErrSumPx += best;
+                m_centroidErrMinPx = (m_centroidSamples == 1) ? best : std::min(m_centroidErrMinPx, best);
+                m_centroidErrMaxPx = std::max(m_centroidErrMaxPx, best);
+                m_uiState.centroidSampleCount = m_centroidSamples;
+                m_uiState.centroidErrLastPx = best;
+                m_uiState.centroidErrAvgPx = m_centroidErrSumPx / m_centroidSamples;
+                m_uiState.centroidErrMinPx = m_centroidErrMinPx;
+                m_uiState.centroidErrMaxPx = m_centroidErrMaxPx;
+            }
+        }
+    }
+}
+
 void Application::Update(float deltaTime)
 {
     m_fps = 1.0f / (deltaTime > 0 ? deltaTime : 1e-4f);
@@ -509,10 +592,19 @@ void Application::Update(float deltaTime)
         m_detector->SetBlobCounts(counts);
     }
 
+    // Perf debug: wall-clock per stage. "Detect" covers frame grab + threshold +
+    // blob extraction; "Pose" covers stabilize + IK + skeleton apply.
+    auto msSince = [](std::chrono::steady_clock::time_point t0) {
+        return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    };
+
     std::vector<MarkerObservation> observations;
+    m_uiState.perfDetectMs = 0.0f;
     if (m_detector)
     {
+        const auto tDetect = std::chrono::steady_clock::now();
         observations = m_detector->Detect();
+        m_uiState.perfDetectMs = msSince(tDetect);
 
         // macOS camera-permission workaround: if the device is open but not
         // delivering frames, periodically rebuild the detector so a post-launch
@@ -535,6 +627,14 @@ void Application::Update(float deltaTime)
 
     // Resolve paired same-color blobs to unique slot ids before any per-id consumer.
     m_assigner.Assign(observations);
+
+    // Centroid accuracy compares the raw detection against the user's manual
+    // click, so snapshot before the stabilizer smooths the centroids.
+    std::vector<MarkerObservation> rawObservations;
+    if (m_uiState.centroidTestActive)
+        rawObservations = observations;
+
+    const auto tPose = std::chrono::steady_clock::now();
 
     // Deadzone + EMA before anything consumes the observations, so marker jitter
     // doesn't sway the rig. Knobs are live-tunable from the UI.
@@ -598,6 +698,9 @@ void Application::Update(float deltaTime)
         if (m_recorder.IsRecording())
             m_recorder.AddSkeletonKeyframe(*m_riggedSkeleton);
     }
+
+    m_uiState.perfPoseMs = msSince(tPose);
+    UpdatePerfStats(deltaTime, rawObservations);
 
     m_uiState.isRecording = m_recorder.IsRecording();
     m_uiState.keyframeCount = m_recorder.GetKeyframeCount();

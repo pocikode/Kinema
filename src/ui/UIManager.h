@@ -115,6 +115,29 @@ struct UIState
     bool exportVideoRequested = false;
     bool exportGlbRequested = false;
 
+    // --- Perf debug (Debug section). Per-frame numbers + sampling aggregates are
+    // filled by Application; UI only toggles sampling and requests resets.
+    bool perfSampling = false;
+    bool perfResetRequested = false; // drained by Application
+    float perfDetectMs = 0.0f;       // Detect() wall time this frame
+    float perfPoseMs = 0.0f;         // stabilize + skeleton apply wall time this frame
+    int perfFrameCount = 0;          // frames aggregated since sampling started
+    float perfDuration = 0.0f;       // seconds aggregated
+    float perfFpsAvg = 0.0f, perfFpsMin = 0.0f, perfFpsMax = 0.0f;
+    float perfDetectAvgMs = 0.0f, perfDetectMaxMs = 0.0f;
+    float perfPoseAvgMs = 0.0f;
+
+    // Centroid accuracy test: click the camera feed at the marker's true center;
+    // pixel error to the nearest raw (pre-stabilizer) detected centroid is
+    // aggregated. Coordinates normalized like the eyedropper's.
+    bool centroidTestActive = false;
+    bool centroidClickRequested = false; // set on click; drained by Application
+    bool centroidResetRequested = false; // drained by Application
+    glm::vec2 centroidClickNorm = {0.0f, 0.0f};
+    int centroidSampleCount = 0;
+    float centroidErrLastPx = 0.0f;
+    float centroidErrAvgPx = 0.0f, centroidErrMinPx = 0.0f, centroidErrMaxPx = 0.0f;
+
     // Camera feed texture
     GLuint cameraFeedTexture = 0;
     int feedWidth = 0;
@@ -140,6 +163,7 @@ class UIManager
     void DrawModelSection(UIState &state);
     void DrawRecordingSection(UIState &state);
     void DrawExportSection(UIState &state);
+    void DrawDebugSection(UIState &state);
     void DrawStatusBar(UIState &state, float fps, bool detectedThisFrame);
     void DrawCameraFeedWindow(UIState &state, const std::vector<MarkerObservation> &observations);
     void DrawAxisGizmo(const glm::mat4 &viewMatrix);

@@ -28,6 +28,9 @@ class Application : public Geni::Application
     void RebuildBindingsFromState();
     void ApplyEyedropperPick(); // sample the camera frame at the armed slot's clicked point
     glm::vec3 Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels);
+    // Perf debug: drain UI reset/click requests, aggregate FPS/latency while
+    // sampling, and score centroid-accuracy clicks against raw observations.
+    void UpdatePerfStats(float deltaTime, const std::vector<MarkerObservation> &rawObservations);
 
     // Modules
     std::unique_ptr<IMarkerDetector> m_detector;
@@ -59,4 +62,15 @@ class Application : public Geni::Application
     float m_playbackTime = 0.0f;
     bool m_playback = false;
     float m_cameraRetryTimer = 0.0f;
+
+    // Perf debug accumulators — aggregated into UIState.perf* while sampling
+    int m_perfFrames = 0;
+    float m_perfDuration = 0.0f;
+    float m_perfFpsSum = 0.0f, m_perfFpsMin = 0.0f, m_perfFpsMax = 0.0f;
+    float m_perfDetectSumMs = 0.0f, m_perfDetectMaxMs = 0.0f;
+    float m_perfPoseSumMs = 0.0f;
+
+    // Centroid accuracy accumulators — aggregated into UIState.centroid*
+    int m_centroidSamples = 0;
+    float m_centroidErrSumPx = 0.0f, m_centroidErrMinPx = 0.0f, m_centroidErrMaxPx = 0.0f;
 };
