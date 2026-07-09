@@ -19,6 +19,9 @@ void main() {
     ivec4 joints = ivec4(aJoints);
     float totalWeight = aWeights.x + aWeights.y + aWeights.z + aWeights.w;
 
+    // Linear Blend Skinning: v' = SUM(w_i * M_i * v)
+    // w_i = bobot tulang ke-i (aWeights), M_i = skin matrix tulang ke-i (uBones,
+    // hasil Skeleton::BuildPalette), maksimal 4 tulang per verteks (standar glTF).
     mat4 skin;
     if (totalWeight > 0.0) {
         skin = aWeights.x * uBones[joints.x]
@@ -29,6 +32,7 @@ void main() {
         skin = mat4(1.0);
     }
 
+    // Posisi verteks akhir setelah deformasi skinning
     vec4 skinnedPos = skin * vec4(aPos, 1.0);
     vec3 skinnedNormal = mat3(skin) * aNormal;
 

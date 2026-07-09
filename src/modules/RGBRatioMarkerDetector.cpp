@@ -72,18 +72,25 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
                 const float total = r + g + b;
                 if (total < 1e-5f)
                     continue;
+                // Syarat "cukup terang": rerata kanal > vMin
                 if (total / 3.0f <= static_cast<float>(range.vMin))
                     continue; // too dark
 
+                // Normalisasi kromatisitas:
+                //   rn = R/(R+G+B), gn = G/(R+G+B), bn = B/(R+G+B)
+                // Kecerahan absolut dibuang, jadi tahan perubahan intensitas cahaya.
                 const float rn = r / total;
                 const float gn = g / total;
                 const float bn = b / total;
+                // Syarat "cukup jenuh": deviasi maksimum dari
+                // titik netral (1/3, 1/3, 1/3) >= satMin, untuk menolak piksel abu-abu.
                 // Saturation: how far the chromaticity sits from neutral (1/3,1/3,1/3).
                 const float sat =
                     std::max({std::fabs(rn - kThird), std::fabs(gn - kThird), std::fabs(bn - kThird)});
                 if (sat < range.satMin)
                     continue; // too gray/washed out
 
+                // Piksel cocok bila rn, gn, bn berada dalam jendela yang dikonfigurasi
                 if (rn >= range.rMin && rn <= range.rMax && gn >= range.gMin && gn <= range.gMax &&
                     bn >= range.bMin && bn <= range.bMax)
                     mrow[x] = 255;
@@ -126,6 +133,8 @@ std::vector<MarkerObservation> RGBRatioMarkerDetector::Detect()
                 continue;
             }
 
+            // Centroid blob dari momen kontur:
+            //   cx = m10/m00, cy = m01/m00, lalu dinormalisasi ke [0..1]
             // Centroid normalized by pooled dims keeps the [0..1] space identical to HSV.
             MarkerObservation obs;
             obs.id = static_cast<int>(ri);

@@ -22,6 +22,9 @@ void MarkerStabilizer::Filter(std::vector<MarkerObservation> &obs, float deltaTi
         State &s = it->second;
         glm::vec2 prevCentroid = s.centroid;
 
+        // Anti-jitter deadzone + EMA:
+        // gerakan < deadzone ditahan (dianggap noise); di luar itu dihaluskan
+        // dengan Exponential Moving Average: s = (1 - alpha) * s + alpha * raw.
         // Centroid: hold through the deadzone, else EMA toward raw.
         if (glm::distance(o.centroidNorm, s.centroid) > deadzone)
             s.centroid = glm::mix(s.centroid, o.centroidNorm, alpha);

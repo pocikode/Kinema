@@ -401,11 +401,19 @@ void Application::ApplyEyedropperPick()
     m_uiState.markersDirty = true; // resync detector ranges + reset stabilizer
 }
 
+// Proyeksi 2D -> 3D dengan estimasi kedalaman
+// berbasis luas area blob marker. Rumus:
+//   Z = Zref * sqrt(Aref / (A + 1))          -> makin kecil blob, makin jauh
+//   X = (cx - 0.5) * 2 * (Z / Zref)          -> centroid X dinormalisasi ke [-1..1]
+//   Y = -(cy - 0.5) * 2 * (Z / Zref)         -> sumbu Y layar dibalik
+// Zref = depthRefDist, Aref = depthRefArea (hasil kalibrasi tombol Calibrate di UI).
 glm::vec3 Application::Unproject2DtoWorld(const glm::vec2 &centroidNorm, float areaPixels)
 {
     float worldX = (centroidNorm.x - 0.5f) * 2.0f;
     float worldY = -(centroidNorm.y - 0.5f) * 2.0f;
+    // Kedalaman Z dari luas area (hubungan invers-kuadrat: luas ~ 1/Z^2)
     float worldZ = m_uiState.depthRefDist * glm::sqrt(m_uiState.depthRefArea / (areaPixels + 1.0f));
+    // Skala X/Y sesuai kedalaman agar gerakan konsisten di semua jarak
     worldX *= (worldZ / m_uiState.depthRefDist);
     worldY *= (worldZ / m_uiState.depthRefDist);
     return glm::vec3(worldX, worldY, worldZ);

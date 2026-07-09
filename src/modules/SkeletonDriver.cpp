@@ -48,6 +48,9 @@ std::unordered_map<int, const MarkerObservation *> IndexById(const std::vector<M
     return map;
 }
 
+// Operasi "rotation-between-vectors berdasarkan dot product":
+//   cos(theta) = dot(from, to), sumbu = cross(from, to), sudut = acos(cos theta)
+// Dipakai untuk memutar tulang dari arah bind-pose ke arah target.
 // Build a quaternion that rotates `from` onto `to`. Handles the 180° edge case by
 // picking an arbitrary axis orthogonal to `from`.
 glm::quat RotationBetween(const glm::vec3 &from, const glm::vec3 &to)
@@ -73,6 +76,9 @@ glm::quat RotationBetween(const glm::vec3 &from, const glm::vec3 &to)
     return glm::angleAxis(angle, axis);
 }
 
+// Pengambilan panjang tulang bind-pose: l1 (upperLen,
+// bahu-siku) dan l2 (lowerLen, siku-tangan) dihitung sekali dari inverse bind
+// matrix skeleton (bind_world = inverse(inverse_bind)), lalu di-cache.
 // Lazily sample bind-pose geometry for a chain from the skeleton's inverse-bind
 // matrices (bind_world = inverse(inverse_bind)). Captures lengths, world-space
 // bone directions, and the bind world rotation for each joint — all constant
@@ -101,6 +107,13 @@ void PrimeIKChain(IKChain &chain, const Geni::Skeleton &skeleton, int rootIdx, i
     chain.midBindWorldRot = glm::quat_cast(midBind);
 }
 
+// [Laporan TA Bab 2.2.9 & 5.1.8 poin 4] Solver IK lengan. CATATAN PENTING:
+// laporan mengutip versi lama berbasis Hukum Kosinus (clamp d ke [|l1-l2|, l1+l2],
+// posisi siku dari a = (d^2 + l1^2 - l2^2) / 2d, pole hint arah tekuk). Versi
+// sekarang (revisi bimbingan: 3 marker per lengan) memakai arah antar-marker
+// langsung: upper arm dibidik marker U->L, forearm dibidik L->P. Panjang tulang
+// bind-pose tetap dipertahankan (tanpa stretch), rotasi tetap lewat
+// RotationBetween (dot product) + WorldToLocalRot seperti dijelaskan laporan.
 // Segment-driven arm solver. The shoulder joint (`rootPos`) is held fixed; the
 // two bones are aimed using *inter-marker* directions so they live in the same
 // frame as each other (the rig shoulder's absolute world height is unrelated to

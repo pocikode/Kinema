@@ -113,6 +113,9 @@ float MotionRecorder::GetDuration() const
     return static_cast<float>(m_keyframes.back().timestamp);
 }
 
+// Ekspor rekaman ke skema JSON keyframe versi 2:
+// { "version": 2, "keyframes": [ { "t": detik, "bones": { nama ->
+//   px/py/pz (posisi lokal), qw/qx/qy/qz (quaternion), sx/sy/sz (skala) } } ] }
 bool MotionRecorder::SaveToJson(const std::string &path) const
 {
     try
