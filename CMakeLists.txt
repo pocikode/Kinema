@@ -61,6 +61,7 @@ set(SRC_FILES
     src/modules/SkeletonDriver.cpp
     src/modules/VideoExporter.cpp
     src/modules/GlbExporter.cpp
+    src/modules/EvalLogger.cpp
     src/ui/UIManager.cpp
     ${IMGUI_SOURCES}
 )
