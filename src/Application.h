@@ -1,4 +1,5 @@
 #pragma once
+#include "modules/EvalLogger.h"
 #include "modules/GlbExporter.h"
 #include "modules/HSVMarkerDetector.h"
 #include "modules/MarkerAssigner.h"
@@ -39,6 +40,7 @@ class Application : public Geni::Application
     SkeletonDriver m_skelDriver;
     MarkerAssigner m_assigner;
     MarkerStabilizer m_stabilizer;
+    EvalLogger m_evalLogger;
 
     // Scene objects (non-owning pointers — owned by Scene)
     Geni::Scene *m_scene = nullptr;

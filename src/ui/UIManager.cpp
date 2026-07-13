@@ -404,6 +404,24 @@ void UIManager::DrawDetectorSection(UIState &state)
     ImGui::SameLine();
     ImGui::TextDisabled("(stand at ref distance)");
     ImGui::Spacing();
+
+    ImGui::Text("Eval Log");
+    ImGui::InputText("CSV path##eval_log_path", state.evalLogPath, sizeof(state.evalLogPath));
+    if (state.evalLogActive)
+    {
+        if (ImGui::Button("Stop logging##eval_log"))
+            state.stopEvalLogRequested = true;
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "LOGGING");
+    }
+    else
+    {
+        if (ImGui::Button("Start logging##eval_log"))
+            state.startEvalLogRequested = true;
+        ImGui::SameLine();
+        ImGui::TextDisabled("(per-frame CSV for eval)");
+    }
+    ImGui::Spacing();
 }
 
 void UIManager::DrawMarkersSection(UIState &state, const std::vector<MarkerObservation> &observations)

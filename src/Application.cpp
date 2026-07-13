@@ -551,6 +551,51 @@ void Application::Update(float deltaTime)
         m_uiState.calibrateDepthRequested = false;
     }
 
+    // Evaluation CSV logging: one row per configured slot per frame, after the
+    // stabilizer so logged values match what the skeleton driver consumes.
+    if (m_uiState.startEvalLogRequested)
+    {
+        m_evalLogger.Start(m_uiState.evalLogPath);
+        m_uiState.startEvalLogRequested = false;
+    }
+    if (m_uiState.stopEvalLogRequested)
+    {
+        m_evalLogger.Stop();
+        m_uiState.stopEvalLogRequested = false;
+    }
+    m_uiState.evalLogActive = m_evalLogger.IsActive();
+    if (m_evalLogger.IsActive())
+    {
+        m_evalLogger.BeginFrame(deltaTime, m_fps);
+        float fw = m_detector ? static_cast<float>(m_detector->GetFrameWidth()) : 0.0f;
+        float fh = m_detector ? static_cast<float>(m_detector->GetFrameHeight()) : 0.0f;
+        for (size_t i = 0; i < m_uiState.markers.size(); ++i)
+        {
+            const MarkerObservation *found = nullptr;
+            for (const auto &o : observations)
+            {
+                if (o.id == static_cast<int>(i))
+                {
+                    found = &o;
+                    break;
+                }
+            }
+            if (found)
+            {
+                glm::vec3 world = Unproject2DtoWorld(found->centroidNorm, found->areaPixels);
+                m_evalLogger.LogSlot(
+                    static_cast<int>(i), m_uiState.markers[i].name, found->predicted, found->centroidNorm.x,
+                    found->centroidNorm.y, found->centroidNorm.x * fw, found->centroidNorm.y * fh, found->areaPixels,
+                    world.z
+                );
+            }
+            else
+            {
+                m_evalLogger.LogMissing(static_cast<int>(i), m_uiState.markers[i].name);
+            }
+        }
+    }
+
     if (m_playback && m_riggedSkeleton)
     {
         // Playback overrides live detection so the recorded motion renders untouched.
@@ -684,6 +729,7 @@ void Application::Render()
 
 void Application::Destroy()
 {
+    m_evalLogger.Stop();
     m_uiManager.Destroy();
     if (m_detector)
     {

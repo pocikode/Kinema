@@ -86,6 +86,12 @@ struct UIState
     int depthCalibSlot = 0;
     bool calibrateDepthRequested = false;
 
+    // Evaluation CSV logging (per-frame centroid/area/depth per slot; Subbab 3.2.2)
+    char evalLogPath[512] = "eval_log.csv";
+    bool evalLogActive = false; // display only; owned by Application/EvalLogger
+    bool startEvalLogRequested = false;
+    bool stopEvalLogRequested = false;
+
     // Marker config persistence (HSV bands + bindings reuse across sessions)
     char markerConfigPath[512] = "markers.json";
     bool exportMarkersRequested = false;
